@@ -349,7 +349,7 @@ function cmpRecords(s) {
 }
 function matches(r, q) {
   if (!q) return true;
-  const hay = [r.artist, r.artistSort, r.title, r.label, r.catno, r.barcode, r.genre, (r.styles || []).join(' '), r.shelf, (r.tags || []).join(' '), r.notes, r.year, r.origYear, 'nr ' + r.inv].join(' ').toLowerCase();
+  const hay = [r.artist, r.artistSort, r.title, r.label, r.catno, r.barcode, r.genre, (r.styles || []).join(' '), r.shelf, (r.tags || []).join(' '), r.notes, r.boughtAt, r.year, r.origYear, 'nr ' + r.inv].join(' ').toLowerCase();
   return q.split(/\s+/).every(t => hay.includes(t));
 }
 
@@ -420,6 +420,10 @@ function toast(msg, action) {
   t.hidden = false;
   clearTimeout(toastTimer); toastTimer = setTimeout(hideToast, action ? 7000 : 3200);
 }
+const parsePrice = v => { const n = parseFloat(String(v ?? '').replace(/[€\s]/g, '').replace(',', '.')); return isFinite(n) && n >= 0 ? Math.round(n * 100) / 100 : ''; };
+const priceInput = v => v === '' || v == null ? '' : Number(v).toFixed(2).replace('.', ',');
+const priceText = v => v === '' || v == null ? '' : Number(v).toLocaleString('de-DE', {style: 'currency', currency: 'EUR'});
+const dateText = v => { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v || ''); return m ? `${m[3]}.${m[2]}.${m[1]}` : (v || ''); };
 const field = (name, label, value = '', attrs = '') => `<label class="field"><span>${label}</span><input name="${name}" value="${esc(value)}" ${attrs}></label>`;
 
 /* ---------- Scanner ---------- */
@@ -696,7 +700,7 @@ async function chooseResult(r, barcode) {
   }
   openEdit(draftFrom(d, barcode), true);
 }
-const emptyDraft = () => ({id: null, artist: '', artistSort: '', title: '', year: '', origYear: '', genre: '', styles: [], label: '', catno: '', country: '', format: 'Vinyl, LP', barcode: '', cover: '', coverFallback: '', source: 'manual', sourceId: '', shelf: '', tags: [], condition: '', rating: 0, notes: ''});
+const emptyDraft = () => ({id: null, artist: '', artistSort: '', title: '', year: '', origYear: '', genre: '', styles: [], label: '', catno: '', country: '', format: 'Vinyl, LP', barcode: '', cover: '', coverFallback: '', source: 'manual', sourceId: '', shelf: '', tags: [], condition: '', rating: 0, notes: '', price: '', boughtAt: '', boughtOn: ''});
 function draftFrom(r, barcode) {
   return {...emptyDraft(), artist: r.artist, artistSort: r.artistSort, title: r.title, year: r.year, origYear: r.origYear || r.year,
     genre: r.genre || '', styles: r.styles || [], label: r.label, catno: r.catno, country: r.country, format: r.format,
@@ -730,7 +734,11 @@ function openEdit(d, isNew) {
         <div class="field"><span>Bewertung</span><div class="stars" data-r="${d.rating || 0}">${[1, 2, 3, 4, 5].map(n => `<label><input type="radio" name="rating" value="${n}"${d.rating === n ? ' checked' : ''}><span aria-label="${n} von 5 Sternen">★</span></label>`).join('')}<label class="nostar"><input type="radio" name="rating" value="0"${!d.rating ? ' checked' : ''}><span>keine</span></label></div></div>
         <label class="field"><span>Notizen</span><textarea name="notes" rows="3">${esc(d.notes)}</textarea></label>
       </fieldset>
-      ${datalist('dl-shelves', uniq(records.map(r => r.shelf)))}${datalist('dl-genres', uniq(records.map(r => r.genre)))}
+      <fieldset><legend>Kauf (freiwillig)</legend>
+        <div class="two">${field('price', 'Einkaufspreis in €', priceInput(d.price), 'inputmode="decimal" placeholder="z. B. 24,99" pattern="\\s*\\d+([.,]\\d{1,2})?\\s*€?\\s*" title="Betrag in Euro, z. B. 24,99"')}${field('boughtOn', 'Einkaufsdatum', d.boughtOn, 'type="date"')}</div>
+        ${field('boughtAt', 'Einkaufsort', d.boughtAt, 'list="dl-places" placeholder="z. B. Flohmarkt, Plattenladen, Discogs"')}
+      </fieldset>
+      ${datalist('dl-shelves', uniq(records.map(r => r.shelf)))}${datalist('dl-genres', uniq(records.map(r => r.genre)))}${datalist('dl-places', uniq(records.map(r => r.boughtAt)))}
       <button class="btn primary wide" type="submit">Speichern</button>
     </form>`,
   body => {
@@ -748,7 +756,7 @@ async function saveRecord(d, fd, isNew) {
   const rec = {...d, id: d.id || newId(), inv, artist: g('artist'), artistSort: g('artistSort') || defaultSort(g('artist')), title: g('title'),
     year: g('year'), origYear: g('origYear'), genre: g('genre'), styles: list('styles'), label: g('label'), catno: g('catno'),
     country: g('country'), format: g('format'), barcode: g('barcode').replace(/\D/g, ''), shelf: g('shelf'), tags: list('tags'),
-    condition: g('condition'), rating: parseInt(g('rating')) || 0, notes: g('notes'), addedAt: d.addedAt || Date.now(), updatedAt: Date.now()};
+    condition: g('condition'), rating: parseInt(g('rating')) || 0, notes: g('notes'), price: parsePrice(g('price')), boughtAt: g('boughtAt'), boughtOn: g('boughtOn'), addedAt: d.addedAt || Date.now(), updatedAt: Date.now()};
   try { await dbPut(rec); } catch (e) { toast('Speichern fehlgeschlagen: ' + e.message); return; }
   const i = records.findIndex(r => r.id === rec.id);
   if (i >= 0) records[i] = rec; else records.push(rec);
@@ -765,7 +773,8 @@ function openDetail(id) {
   const yearText = r.year && r.origYear && r.origYear !== r.year ? `${r.year} (erstmals ${r.origYear})` : (r.year || r.origYear);
   const meta = [['Jahr', yearText], ['Genre', [r.genre, ...(r.styles || [])].filter(Boolean).join(', ')], ['Label', [r.label, r.catno].filter(Boolean).join(', ')],
     ['Land', r.country], ['Format', r.format], ['Barcode', r.barcode], ['Zustand', r.condition ? (CONDITIONS.find(c => c[0] === r.condition) || [, r.condition])[1] : ''],
-    ['Kategorien', (r.tags || []).join(', ')], ['Einsortiert unter', r.artistSort]].filter(([, v]) => v);
+    ['Kategorien', (r.tags || []).join(', ')], ['Einsortiert unter', r.artistSort],
+    ['Einkaufspreis', priceText(r.price)], ['Einkaufsort', r.boughtAt], ['Einkaufsdatum', dateText(r.boughtOn)]].filter(([, v]) => v);
   const link = r.source === 'discogs' ? `https://www.discogs.com/release/${encodeURIComponent(r.sourceId)}` : r.source === 'musicbrainz' ? `https://musicbrainz.org/release/${encodeURIComponent(r.sourceId)}` : '';
   openSheet(`<div class="detail-cover">${coverHTML(r)}</div>
     <h2 class="d-artist">${esc(r.artist)}</h2><p class="d-title">${esc(r.title)}</p>
@@ -809,7 +818,7 @@ async function exportCsv() {
   const cols = [['Inventarnummer', 'inv'], ['Künstler', 'artist'], ['Einsortiert unter', 'artistSort'], ['Titel', 'title'], ['Jahr', 'year'], ['Erstveröffentlichung', 'origYear'],
     ['Genre', 'genre'], ['Stile', r => (r.styles || []).join(', ')], ['Label', 'label'], ['Katalognummer', 'catno'], ['Land', 'country'], ['Format', 'format'],
     ['Barcode', r => r.barcode ? `="${r.barcode}"` : ''], ['Regalfach', 'shelf'], ['Kategorien', r => (r.tags || []).join(', ')], ['Zustand', 'condition'],
-    ['Bewertung', 'rating'], ['Notizen', 'notes'], ['Hinzugefügt', r => r.addedAt ? new Date(r.addedAt).toLocaleDateString('de-DE') : ''], ['Quelle', 'source'], ['Quell-ID', 'sourceId']];
+    ['Bewertung', 'rating'], ['Notizen', 'notes'], ['Einkaufspreis', r => priceInput(r.price)], ['Einkaufsort', 'boughtAt'], ['Einkaufsdatum', r => dateText(r.boughtOn)], ['Hinzugefügt', r => r.addedAt ? new Date(r.addedAt).toLocaleDateString('de-DE') : ''], ['Quelle', 'source'], ['Quell-ID', 'sourceId']];
   const cell = v => '"' + String(v ?? '').replace(/"/g, '""') + '"';
   const rows = records.slice().sort(cmpRecords('inv')).map(r => cols.map(([, k]) => cell(typeof k === 'function' ? k(r) : r[k])).join(';'));
   const csv = '\uFEFF' + [cols.map(c => cell(c[0])).join(';'), ...rows].join('\r\n');
