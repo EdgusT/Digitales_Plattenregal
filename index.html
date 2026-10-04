@@ -1,0 +1,903 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Plattenregal</title>
+<meta name="theme-color" content="#E7EAEE" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#12161E" media="(prefers-color-scheme: dark)">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Plattenregal">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&display=swap" rel="stylesheet">
+<script src="html5-qrcode.min.js" defer></script>
+<style>
+:root{
+  --bg:#E7EAEE; --surface:#F8F9FB; --surface-2:#DDE2E8; --ink:#1B2230; --muted:#596377;
+  --line:#C6CDD7; --accent:#F2B705; --accent-ink:#1B2230; --blue:#2F4A73; --danger:#B3261E;
+  --font:"Archivo","Arial Narrow",system-ui,-apple-system,"Segoe UI",sans-serif;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --bg:#12161E; --surface:#1B212C; --surface-2:#252C39; --ink:#E6E9EE; --muted:#8E98AA;
+    --line:#323B4B; --accent:#F2B705; --accent-ink:#1B2230; --blue:#9DB8E3; --danger:#F2867E;
+    color-scheme:dark;
+  }
+}
+*{box-sizing:border-box}
+[hidden]{display:none !important}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0; background:var(--bg); color:var(--ink); font-family:var(--font);
+  font-size:16px; line-height:1.45; -webkit-tap-highlight-color:transparent;
+  padding:env(safe-area-inset-top,0px) env(safe-area-inset-right,0px) 0 env(safe-area-inset-left,0px);
+}
+body.locked{overflow:hidden}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+a{color:var(--blue)}
+
+/* Kopfbereich */
+.top{padding:18px 16px 6px;max-width:960px;margin:0 auto}
+.title-row{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+h1{
+  margin:0;font-weight:800;font-stretch:68%;font-size:clamp(2.6rem,13vw,4rem);
+  line-height:.88;letter-spacing:-.01em;
+}
+.count{margin:6px 0 14px;color:var(--muted);font-stretch:90%;min-height:1.4em}
+.icon-btn{
+  flex:none;width:44px;height:44px;border-radius:50%;border:1.5px solid var(--line);
+  background:var(--surface);display:grid;place-items:center;
+}
+.icon-btn svg{width:22px;height:22px}
+#search{
+  width:100%;padding:12px 14px;border-radius:10px;border:1.5px solid var(--line);
+  background:var(--surface);font-size:16px;
+}
+.controls{display:flex;gap:8px;align-items:flex-end;margin-top:10px}
+.controls label{flex:1;display:flex;flex-direction:column;gap:3px;font-size:.8rem;color:var(--muted);min-width:0}
+select{
+  width:100%;padding:9px 30px 9px 10px;border-radius:9px;border:1.5px solid var(--line);
+  background:var(--surface) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23808a9c' stroke-width='2' fill='none'/%3E%3C/svg%3E") no-repeat right 10px center;
+  -webkit-appearance:none;appearance:none;font-size:16px;color:var(--ink);
+}
+
+/* Liste */
+main{max-width:960px;margin:0 auto;padding:4px 16px calc(120px + env(safe-area-inset-bottom,0px))}
+.group{margin-top:34px}
+.divider{
+  position:relative;margin:0 0 14px;border-top:3px solid var(--ink);
+  display:flex;justify-content:flex-end;font-size:1rem;font-weight:400;
+}
+.divider .tab{
+  position:absolute;bottom:100%;left:min(var(--tab,0%),calc(100% - 10rem));
+  background:var(--ink);color:var(--bg);padding:4px 16px 2px;border-radius:7px 7px 0 0;
+  font-weight:800;font-stretch:75%;font-size:1.15rem;line-height:1.2;white-space:nowrap;
+  max-width:10rem;overflow:hidden;text-overflow:ellipsis;
+}
+.divider .n{position:absolute;right:0;bottom:calc(100% + 3px);color:var(--muted);font-size:.85rem}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(102px,1fr));gap:16px 12px}
+.rec{background:none;border:0;padding:0;text-align:left;display:flex;flex-direction:column;gap:2px;min-width:0}
+.rec .cover{margin-bottom:5px}
+.rec .a,.row .a{font-weight:700;font-stretch:85%;font-size:.86rem;line-height:1.2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}
+.rec .t{color:var(--muted);font-size:.8rem;line-height:1.25;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.rows{display:flex;flex-direction:column}
+.row{
+  display:grid;grid-template-columns:56px 1fr auto;gap:12px;align-items:center;text-align:left;
+  background:none;border:0;border-bottom:1px solid var(--line);padding:9px 0;min-width:0;
+}
+.row .txt{display:flex;flex-direction:column;min-width:0}
+.row .t{font-size:.92rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row .m{color:var(--muted);font-size:.78rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row .side{display:flex;flex-direction:column;align-items:flex-end;gap:2px;font-size:.78rem;color:var(--muted)}
+.shelf{background:var(--surface-2);color:var(--ink);padding:1px 8px;border-radius:5px;font-weight:700}
+
+.cover{
+  display:block;position:relative;aspect-ratio:1;width:100%;border-radius:3px;overflow:hidden;
+  background:var(--surface-2);box-shadow:0 1px 0 rgba(0,0,0,.18),0 4px 10px -6px rgba(0,0,0,.35);
+}
+.cover img{width:100%;height:100%;object-fit:cover;display:block}
+.disc{
+  position:absolute;inset:6%;border-radius:50%;display:grid;place-items:center;
+  background:
+    radial-gradient(circle,#0b0b0b 0 3%,var(--label) 3.5% 31%,transparent 31.5%),
+    repeating-radial-gradient(circle,#171717 0 1.4px,#272727 1.4px 2.8px);
+}
+.disc span{font-weight:800;font-stretch:75%;color:#fff;font-size:clamp(.6rem,3.2vw,1.1rem);text-shadow:0 1px 1px rgba(0,0,0,.4);transform:translateY(-78%)}
+.empty{text-align:center;color:var(--muted);padding:40px 12px;max-width:34ch;margin:0 auto}
+.empty strong{color:var(--ink);font-size:1.2rem;font-stretch:85%}
+.empty .cover{width:150px;margin:0 auto 20px;background:transparent;box-shadow:none}
+.notice{
+  margin-top:20px;background:var(--surface);border-left:4px solid var(--accent);
+  padding:10px 12px;border-radius:6px;font-size:.9rem;display:flex;gap:10px;align-items:center;justify-content:space-between
+}
+
+/* Scan-Knopf */
+.fab{
+  position:fixed;left:50%;transform:translateX(-50%);bottom:calc(18px + env(safe-area-inset-bottom,0px));
+  background:var(--accent);color:var(--accent-ink);border:0;border-radius:999px;padding:15px 26px 15px 22px;
+  font-weight:800;font-stretch:85%;font-size:1.08rem;display:flex;gap:10px;align-items:center;
+  box-shadow:0 8px 24px -6px rgba(0,0,0,.45);z-index:5;white-space:nowrap;
+}
+.fab svg{width:26px;height:20px}
+.toast{
+  position:fixed;left:12px;right:12px;bottom:calc(88px + env(safe-area-inset-bottom,0px));z-index:30;
+  max-width:520px;margin:0 auto;background:var(--ink);color:var(--bg);border-radius:10px;
+  padding:12px 14px;display:flex;gap:12px;align-items:center;justify-content:space-between;font-size:.92rem;
+  box-shadow:0 8px 24px -8px rgba(0,0,0,.5);
+}
+.toast button{background:var(--accent);color:var(--accent-ink);border:0;border-radius:7px;padding:7px 11px;font-weight:700;white-space:nowrap}
+
+/* Blatt (Bottom Sheet) */
+.sheet{position:fixed;inset:0;z-index:20}
+.backdrop{position:absolute;inset:0;background:rgba(10,13,20,.55)}
+.panel{
+  position:absolute;left:0;right:0;bottom:0;margin:0 auto;width:min(100%,620px);
+  max-height:calc(100% - 28px - env(safe-area-inset-top,0px));overflow:auto;overscroll-behavior:contain;
+  background:var(--surface);border-radius:16px 16px 0 0;
+  padding:22px 18px calc(28px + env(safe-area-inset-bottom,0px));
+}
+.sheet:not([hidden]) .panel{animation:up .22s ease-out}
+@keyframes up{from{transform:translateY(40px);opacity:.4}to{transform:none;opacity:1}}
+@media (prefers-reduced-motion: reduce){.sheet:not([hidden]) .panel{animation:none}}
+.close{
+  position:sticky;top:0;float:right;margin:-8px -6px 0 0;width:40px;height:40px;border-radius:50%;
+  border:0;background:var(--surface-2);font-size:1.5rem;line-height:1;z-index:2;
+}
+.sheet-title{margin:0 0 14px;font-weight:800;font-stretch:72%;font-size:2rem;line-height:1}
+.hint{color:var(--muted);font-size:.92rem;margin:10px 0}
+.small{font-size:.82rem}
+.reader{width:100%;border-radius:12px;overflow:hidden;background:#000;min-height:180px}
+.reader video{width:100% !important;display:block}
+.inline-form{display:flex;gap:8px;margin:12px 0}
+.inline-form input{flex:1;min-width:0}
+input:not([type=radio]):not([type=file]),textarea{
+  width:100%;padding:11px 12px;border-radius:9px;border:1.5px solid var(--line);background:var(--bg);font-size:16px;
+}
+textarea{resize:vertical}
+.btn{
+  border:1.5px solid var(--ink);background:transparent;border-radius:10px;padding:11px 16px;
+  font-weight:700;font-stretch:90%;text-align:center;text-decoration:none;display:inline-block;color:var(--ink)
+}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn.ghost{border-color:var(--line)}
+.btn.danger{border-color:transparent;color:var(--danger)}
+.btn.wide{width:100%}
+.alt-actions,.stack{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+.stack{flex-direction:column}
+.loading{display:flex;flex-direction:column;align-items:center;gap:16px;padding:40px 0;color:var(--muted)}
+.spin{width:64px;height:64px;position:relative}
+.spin .disc{inset:0;--label:var(--accent);animation:rot 1.4s linear infinite}
+@keyframes rot{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion: reduce){.spin .disc{animation:none}}
+
+.results{display:flex;flex-direction:column;margin-top:6px}
+.result{
+  display:grid;grid-template-columns:60px 1fr;gap:12px;align-items:center;text-align:left;
+  background:none;border:0;border-bottom:1px solid var(--line);padding:10px 0;
+}
+.result .a{font-weight:700;font-stretch:85%;line-height:1.2}
+.result .m{color:var(--muted);font-size:.8rem}
+.badge{display:inline-block;font-size:.72rem;font-weight:700;padding:1px 7px;border-radius:5px;background:var(--surface-2);margin-top:3px}
+.badge.vinyl{background:var(--accent);color:var(--accent-ink)}
+.warn{background:var(--bg);border-left:4px solid var(--accent);padding:10px 12px;border-radius:6px;margin:6px 0 10px;font-size:.92rem}
+.warn button{margin-top:8px}
+
+.form fieldset{border:0;padding:0;margin:0 0 18px}
+.form legend{font-weight:800;font-stretch:80%;font-size:1.15rem;margin-bottom:8px;padding:0}
+.field{display:flex;flex-direction:column;gap:4px;margin-bottom:12px;min-width:0}
+.field>span{font-size:.82rem;color:var(--muted)}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.edit-head{display:grid;grid-template-columns:84px 1fr;gap:14px;align-items:center;margin-bottom:18px}
+.edit-head .a{font-weight:800;font-stretch:80%;font-size:1.15rem;line-height:1.15}
+.edit-head .m{color:var(--muted);font-size:.8rem;margin-top:4px}
+.stars{display:flex;gap:4px;align-items:center;flex-wrap:wrap}
+.stars label{cursor:pointer}
+.stars input{position:absolute;opacity:0;pointer-events:none}
+.stars label span{font-size:1.8rem;color:var(--line);line-height:1;padding:2px}
+.stars .nostar span{font-size:.85rem;color:var(--muted);padding:4px 8px;border:1px solid var(--line);border-radius:6px;margin-left:6px}
+.stars input:focus-visible+span{outline:3px solid var(--accent);border-radius:4px}
+.stars[data-r="1"] label:nth-child(-n+1) span,.stars[data-r="2"] label:nth-child(-n+2) span,
+.stars[data-r="3"] label:nth-child(-n+3) span,.stars[data-r="4"] label:nth-child(-n+4) span,
+.stars[data-r="5"] label:nth-child(-n+5) span{color:var(--accent)}
+.actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:18px}
+
+.detail-cover{width:min(78%,300px);margin:6px auto 18px}
+.d-artist{margin:0;font-weight:800;font-stretch:72%;font-size:2rem;line-height:1}
+.d-title{margin:4px 0 16px;font-size:1.15rem}
+.d-place{display:flex;gap:10px;margin-bottom:16px}
+.d-place div{flex:1;background:var(--bg);border-radius:9px;padding:9px 12px}
+.d-place span{display:block;font-size:.78rem;color:var(--muted)}
+.d-place strong{font-size:1.5rem;font-stretch:75%;line-height:1.1}
+.stars-ro{color:var(--accent)}
+.meta{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;margin:0;font-size:.94rem}
+.meta dt{color:var(--muted)}
+.meta dd{margin:0;overflow-wrap:anywhere}
+.notes{background:var(--bg);padding:10px 12px;border-radius:9px;white-space:pre-wrap;margin-top:14px}
+.set{margin-bottom:24px}
+.set h3{margin:0 0 4px;font-weight:800;font-stretch:80%;font-size:1.2rem}
+.file{position:relative;overflow:hidden}
+.photo-btn{margin:4px 0 2px}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="title-row">
+    <h1>Platten&shy;regal</h1>
+    <button class="icon-btn" id="settingsBtn" aria-label="Einstellungen und Sicherung">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+    </button>
+  </div>
+  <p class="count" id="count"></p>
+  <input id="search" type="search" placeholder="Suchen: Künstler, Titel, Label, Regalfach …" autocomplete="off" aria-label="Sammlung durchsuchen">
+  <div class="controls">
+    <label>Ordnen nach<select id="groupSel"></select></label>
+    <label>Sortieren nach<select id="sortSel"></select></label>
+    <button class="icon-btn" id="viewBtn"></button>
+  </div>
+</header>
+
+<main id="list" aria-live="polite"></main>
+
+<button class="fab" id="scanBtn">
+  <svg viewBox="0 0 26 20" fill="currentColor" aria-hidden="true"><rect x="0" y="0" width="2" height="20"/><rect x="4" y="0" width="1" height="20"/><rect x="7" y="0" width="3" height="20"/><rect x="12" y="0" width="1" height="20"/><rect x="15" y="0" width="2" height="20"/><rect x="19" y="0" width="1" height="20"/><rect x="22" y="0" width="1" height="20"/><rect x="24" y="0" width="2" height="20"/></svg>
+  Platte scannen
+</button>
+
+<div class="toast" id="toast" role="status" hidden></div>
+<div id="fileReader" style="position:absolute;width:1px;height:1px;overflow:hidden;opacity:0;pointer-events:none" aria-hidden="true"></div>
+
+<div class="sheet" id="sheet" hidden>
+  <div class="backdrop" data-close></div>
+  <div class="panel" role="dialog" aria-modal="true">
+    <button class="close" data-close aria-label="Schließen">×</button>
+    <div id="sheetBody"></div>
+  </div>
+</div>
+
+<script>
+'use strict';
+/* ---------- Hilfsfunktionen ---------- */
+const $ = (s, el = document) => el.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const coll = new Intl.Collator('de', {sensitivity: 'base', numeric: true});
+const newId = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
+const today = () => new Date().toISOString().slice(0, 10);
+
+const GROUPS = {letter: 'Buchstabe', genre: 'Genre', shelf: 'Regalfach', decade: 'Jahrzehnt', none: 'Nicht gruppieren'};
+const SORTS = {artist: 'Künstler', title: 'Titel', year: 'Jahr', added: 'Neueste zuerst', inv: 'Inventarnummer'};
+const CONDITIONS = [['', 'nicht angegeben'], ['M', 'M – neuwertig, ungespielt'], ['NM', 'NM – fast neuwertig'], ['VG+', 'VG+ – sehr gut, leichte Spuren'], ['VG', 'VG – gut, hörbare Gebrauchsspuren'], ['G+', 'G+ – deutlich gebraucht'], ['G', 'G – stark gebraucht'], ['P', 'P – schlecht']];
+
+/* ---------- Einstellungen (nur auf diesem Gerät) ---------- */
+const settings = {group: 'letter', sort: 'artist', view: 'grid', discogsToken: '', lastBackup: 0};
+try { Object.assign(settings, JSON.parse(localStorage.getItem('plattenregal-settings') || '{}')); } catch (e) {}
+function saveSettings() { try { localStorage.setItem('plattenregal-settings', JSON.stringify(settings)); } catch (e) {} }
+
+/* ---------- Datenbank (IndexedDB im Browser) ---------- */
+let dbPromise;
+function openDB() {
+  if (!dbPromise) dbPromise = new Promise((res, rej) => {
+    const rq = indexedDB.open('plattenregal', 1);
+    rq.onupgradeneeded = () => rq.result.createObjectStore('records', {keyPath: 'id'});
+    rq.onsuccess = () => res(rq.result);
+    rq.onerror = () => rej(rq.error);
+  });
+  return dbPromise;
+}
+async function dbRun(mode, fn) {
+  const db = await openDB();
+  return new Promise((res, rej) => {
+    const t = db.transaction('records', mode);
+    const rq = fn(t.objectStore('records'));
+    t.oncomplete = () => res(rq ? rq.result : undefined);
+    t.onerror = () => rej(t.error);
+    t.onabort = () => rej(t.error);
+  });
+}
+const dbAll = () => dbRun('readonly', s => s.getAll());
+const dbPut = r => dbRun('readwrite', s => s.put(r));
+const dbDel = id => dbRun('readwrite', s => s.delete(id));
+const dbPutMany = list => dbRun('readwrite', s => { list.forEach(r => s.put(r)); return null; });
+
+let records = [];
+let persistAsked = false;
+function requestPersist() {
+  if (persistAsked) return; persistAsked = true;
+  try { navigator.storage?.persist?.(); } catch (e) {}
+}
+
+/* ---------- Sortieren und Gruppieren ---------- */
+const sortKey = r => (r.artistSort || r.artist || '').trim();
+const yearOf = r => parseInt(r.origYear || r.year) || 0;
+function defaultSort(artist) {
+  const a = (artist || '').trim();
+  return /^the\s+/i.test(a) ? a.replace(/^the\s+/i, '') + ', The' : a;
+}
+function letterOf(r) {
+  const c = sortKey(r).normalize('NFD').charAt(0).toUpperCase();
+  return /[A-Z]/.test(c) ? c : '#';
+}
+function groupOf(r, g) {
+  switch (g) {
+    case 'letter': return letterOf(r);
+    case 'genre': return r.genre || 'Ohne Genre';
+    case 'shelf': return r.shelf || 'Ohne Regalfach';
+    case 'decade': { const y = yearOf(r); return y ? Math.floor(y / 10) * 10 + 'er' : 'Ohne Jahr'; }
+    default: return '';
+  }
+}
+const LAST = new Set(['Ohne Genre', 'Ohne Regalfach', 'Ohne Jahr']);
+const cmpGroups = (a, b) => (LAST.has(a) !== LAST.has(b)) ? (LAST.has(a) ? 1 : -1) : coll.compare(a, b);
+function cmpRecords(s) {
+  const byArtist = (a, b) => coll.compare(sortKey(a), sortKey(b)) || (yearOf(a) || 9999) - (yearOf(b) || 9999) || coll.compare(a.title || '', b.title || '');
+  return ({
+    artist: byArtist,
+    title: (a, b) => coll.compare(a.title || '', b.title || '') || byArtist(a, b),
+    year: (a, b) => (yearOf(a) || 9999) - (yearOf(b) || 9999) || byArtist(a, b),
+    added: (a, b) => (b.addedAt || 0) - (a.addedAt || 0),
+    inv: (a, b) => (a.inv || 0) - (b.inv || 0)
+  })[s] || byArtist;
+}
+function matches(r, q) {
+  if (!q) return true;
+  const hay = [r.artist, r.artistSort, r.title, r.label, r.catno, r.barcode, r.genre, (r.styles || []).join(' '), r.shelf, (r.tags || []).join(' '), r.notes, r.year, r.origYear, 'nr ' + r.inv].join(' ').toLowerCase();
+  return q.split(/\s+/).every(t => hay.includes(t));
+}
+
+/* ---------- Darstellung ---------- */
+function hue(s) { let h = 0; for (const c of String(s || '')) h = (h * 31 + c.charCodeAt(0)) % 360; return h; }
+function initials(r) { return (r.artist || '?').split(/\s+/).filter(w => /\w/.test(w)).slice(0, 2).map(w => w[0].toUpperCase()).join('') || '?'; }
+const discHTML = (h, ini) => `<span class="disc" style="--label:hsl(${h} 55% 50%)"><span>${esc(ini)}</span></span>`;
+function coverHTML(r) {
+  if (r.cover) return `<span class="cover"><img src="${esc(r.cover)}"${r.coverFallback ? ` data-fallback="${esc(r.coverFallback)}"` : ''} data-hue="${hue(r.artist)}" data-ini="${esc(initials(r))}" alt="" loading="lazy" referrerpolicy="no-referrer"></span>`;
+  return `<span class="cover">${discHTML(hue(r.artist), initials(r))}</span>`;
+}
+// Fehlende Cover: erst Ersatzbild versuchen, dann Platten-Platzhalter zeigen
+document.addEventListener('error', e => {
+  const img = e.target;
+  if (!(img instanceof HTMLImageElement) || !img.closest('.cover')) return;
+  if (img.dataset.fallback) { const f = img.dataset.fallback; delete img.dataset.fallback; img.src = f; return; }
+  img.outerHTML = discHTML(img.dataset.hue, img.dataset.ini);
+}, true);
+
+const gridItem = r => `<button class="rec" data-id="${esc(r.id)}">${coverHTML(r)}<span class="a">${esc(r.artist)}</span><span class="t">${esc(r.title)}</span></button>`;
+const rowItem = r => `<button class="row" data-id="${esc(r.id)}">${coverHTML(r)}<span class="txt"><span class="a">${esc(r.artist)}</span><span class="t">${esc(r.title)}</span><span class="m">${esc([yearOf(r) || '', r.label].filter(Boolean).join(', '))}</span></span><span class="side">${r.shelf ? `<span class="shelf">${esc(r.shelf)}</span>` : ''}<span>Nr. ${esc(r.inv)}</span></span></button>`;
+
+function render() {
+  const list = $('#list');
+  const q = $('#search').value.trim().toLowerCase();
+  const n = records.length;
+  $('#count').textContent = n ? `${n} ${n === 1 ? 'Platte' : 'Platten'} im Regal` : '';
+  if (!n) {
+    list.innerHTML = `<div class="empty"><span class="cover">${discHTML(45, '')}</span><p><strong>Das Regal ist noch leer.</strong></p><p>Mit „Platte scannen“ den Barcode auf der Rückseite der Hülle erfassen. Platten ohne Barcode lassen sich über Künstler und Titel suchen.</p></div>`;
+    return;
+  }
+  const items = records.filter(r => matches(r, q)).sort(cmpRecords(settings.sort));
+  let html = '';
+  const stale = Date.now() - (settings.lastBackup || 0) > 30 * 864e5;
+  if (n >= 5 && stale && !q) html += `<div class="notice"><span>${settings.lastBackup ? 'Die letzte Sicherung ist über 30 Tage her.' : 'Noch keine Sicherung erstellt.'}</span><button class="btn ghost" data-action="backup">Jetzt sichern</button></div>`;
+  if (!items.length) { list.innerHTML = html + `<p class="empty">Keine Platte passt zu „${esc(q)}“.</p>`; return; }
+  const groups = new Map();
+  for (const r of items) { const g = groupOf(r, settings.group); if (!groups.has(g)) groups.set(g, []); groups.get(g).push(r); }
+  const keys = settings.group === 'none' ? [...groups.keys()] : [...groups.keys()].sort(cmpGroups);
+  const item = settings.view === 'grid' ? gridItem : rowItem;
+  html += keys.map((k, i) => `<section class="group">${settings.group !== 'none' ? `<h2 class="divider" style="--tab:${(i % 4) * 24}%"><span class="tab">${esc(k)}</span><span class="n">${groups.get(k).length}</span></h2>` : ''}<div class="${settings.view === 'grid' ? 'grid' : 'rows'}">${groups.get(k).map(item).join('')}</div></section>`).join('');
+  list.innerHTML = html;
+}
+
+/* ---------- Blatt, Hinweise ---------- */
+let sheetCleanup = null, flow = 0;
+function runCleanup() { if (sheetCleanup) { try { sheetCleanup(); } catch (e) {} sheetCleanup = null; } }
+function openSheet(html, onMount) {
+  runCleanup();
+  $('#sheetBody').innerHTML = html;
+  const sh = $('#sheet');
+  if (sh.hidden) { sh.hidden = false; document.body.classList.add('locked'); }
+  $('.panel').scrollTop = 0;
+  if (onMount) sheetCleanup = onMount($('#sheetBody')) || null;
+}
+function closeSheet() {
+  flow++; runCleanup();
+  $('#sheet').hidden = true; document.body.classList.remove('locked');
+  $('#sheetBody').innerHTML = '';
+}
+const loadingHTML = msg => `<div class="loading"><span class="spin">${discHTML(45, '')}</span><span>${esc(msg)}</span></div>`;
+let toastTimer;
+function hideToast() { $('#toast').hidden = true; }
+function toast(msg, action) {
+  const t = $('#toast');
+  t.innerHTML = `<span>${esc(msg)}</span>${action ? `<button>${esc(action.label)}</button>` : ''}`;
+  if (action) t.querySelector('button').onclick = () => { hideToast(); action.fn(); };
+  t.hidden = false;
+  clearTimeout(toastTimer); toastTimer = setTimeout(hideToast, action ? 7000 : 3200);
+}
+const field = (name, label, value = '', attrs = '') => `<label class="field"><span>${label}</span><input name="${name}" value="${esc(value)}" ${attrs}></label>`;
+
+/* ---------- Scanner ---------- */
+let scanner = null, scanLock = false;
+function openScanner() {
+  openSheet(`<h2 class="sheet-title">Platte scannen</h2>
+    <div id="reader" class="reader"></div>
+    <p class="hint" id="scanHint">Kamera auf den Barcode auf der Rückseite der Hülle richten. Bei Spiegelungen die Schutzhülle kurz abnehmen.</p>
+    <button class="btn ghost" id="retryCam" hidden>Kamera erneut starten</button>
+    <label class="btn primary wide photo-btn">Foto vom Barcode verwenden<input type="file" id="photoInput" accept="image/*" hidden></label>
+    <form id="codeForm" class="inline-form"><input name="code" inputmode="numeric" placeholder="Barcode eintippen" aria-label="Barcode eintippen" autocomplete="off"><button class="btn">Suchen</button></form>
+    <div class="alt-actions"><button class="btn ghost" id="toText">Ohne Barcode suchen</button><button class="btn ghost" id="toManual">Von Hand eintragen</button></div>`,
+  body => {
+    scanLock = false;
+    startScanner();
+    $('#codeForm', body).addEventListener('submit', e => {
+      e.preventDefault();
+      const c = e.target.code.value.replace(/\D/g, '');
+      if (c.length < 8) { toast('Ein Barcode hat mindestens 8 Ziffern.'); return; }
+      lookupBarcode(c);
+    });
+    $('#toText', body).onclick = () => openTextSearch();
+    $('#toManual', body).onclick = () => openEdit(emptyDraft(), true);
+    $('#retryCam', body).onclick = async () => { $('#retryCam').hidden = true; $('#scanHint').textContent = 'Kamera wird gestartet …'; await stopScanner(); startScanner(); };
+    $('#photoInput', body).onchange = e => { const f = e.target.files[0]; e.target.value = ''; if (f) scanPhoto(f); };
+    return stopScanner;
+  });
+}
+const SCAN_FORMATS = () => { const F = Html5QrcodeSupportedFormats; return [F.EAN_13, F.EAN_8, F.UPC_A, F.UPC_E]; };
+const isPermissionError = err => /NotAllowed|Permission|denied/i.test(String(err && (err.name || '')) + ' ' + String(err));
+function cameraErrorText(err) {
+  const t = String(err && (err.name || '')) + ' ' + String(err);
+  if (!window.isSecureContext) return 'Die Kamera funktioniert nur über eine https-Adresse.';
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return 'Dieser Browser erlaubt der Seite keinen Kamerazugriff. Auf dem iPhone bitte Safari verwenden.';
+  if (isPermissionError(err)) return 'Die Kamera ist für diese Seite nicht erlaubt. Die Berechtigung lässt sich in den Browser- bzw. Handy-Einstellungen freigeben.';
+  if (/NotFound|Requested device not found/i.test(t)) return 'Es wurde keine Kamera gefunden.';
+  if (/NotReadable|TrackStart|Could not start/i.test(t)) return 'Die Kamera wird gerade von einer anderen App benutzt. Andere Kamera-Apps schließen und erneut starten.';
+  return 'Die Kamera ließ sich nicht starten (' + t.trim().slice(0, 120) + ').';
+}
+async function startScanner() {
+  const hint = $('#scanHint');
+  if (!window.Html5Qrcode) { hint.textContent = 'Der Live-Scanner konnte nicht geladen werden. Ein Foto vom Barcode funktioniert trotzdem, oder den Barcode unten eintippen.'; return; }
+  const inst = new Html5Qrcode('reader', {formatsToSupport: SCAN_FORMATS(), experimentalFeatures: {useBarCodeDetectorIfSupported: true}, verbose: false});
+  scanner = inst;
+  const cfg = {fps: 12, qrbox: (w, h) => ({width: Math.max(80, Math.floor(w * .85)), height: Math.max(60, Math.floor(Math.min(h * .45, w * .42)))})};
+  try {
+    try {
+      await inst.start({facingMode: 'environment'}, cfg, onScan, () => {});
+    } catch (first) {
+      if (isPermissionError(first) || scanner !== inst) throw first;
+      // Ersatzweg: Kamera direkt über ihre Kennung auswählen (Rückkamera bevorzugt)
+      const cams = await Html5Qrcode.getCameras();
+      if (!cams.length) throw first;
+      const back = cams.find(c => /back|rear|rück|environment|hinten/i.test(c.label)) || cams[cams.length - 1];
+      await inst.start(back.id, cfg, onScan, () => {});
+    }
+    if (scanner !== inst) { try { await inst.stop(); inst.clear(); } catch (e) {} return; }
+    if (hint) hint.textContent = 'Kamera auf den Barcode auf der Rückseite der Hülle richten. Bei Spiegelungen die Schutzhülle kurz abnehmen.';
+  } catch (err) {
+    if (scanner !== inst || !hint) return;
+    hint.textContent = cameraErrorText(err) + ' Alternativ einfach ein Foto vom Barcode verwenden.';
+    const retry = $('#retryCam'); if (retry) retry.hidden = false;
+  }
+}
+
+/* ---------- Barcode aus einem Foto lesen ---------- */
+function loadImage(file) {
+  return new Promise((res, rej) => {
+    const url = URL.createObjectURL(file), img = new Image();
+    img.onload = () => { URL.revokeObjectURL(url); res(img); };
+    img.onerror = () => { URL.revokeObjectURL(url); rej(new Error('Das Bild konnte nicht geöffnet werden.')); };
+    img.src = url;
+  });
+}
+function drawScaled(img, maxSide, rotate) {
+  const scale = Math.min(1, maxSide / Math.max(img.naturalWidth, img.naturalHeight));
+  const w = Math.round(img.naturalWidth * scale), h = Math.round(img.naturalHeight * scale);
+  const c = document.createElement('canvas');
+  c.width = rotate ? h : w; c.height = rotate ? w : h;
+  const ctx = c.getContext('2d');
+  if (rotate) { ctx.translate(h, 0); ctx.rotate(Math.PI / 2); }
+  ctx.drawImage(img, 0, 0, w, h);
+  return c;
+}
+let fileScanner = null;
+async function detectOnCanvas(canvas) {
+  if ('BarcodeDetector' in window) {
+    try {
+      const det = new BarcodeDetector({formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e']});
+      const found = await det.detect(canvas);
+      if (found.length) return found[0].rawValue;
+    } catch (e) {}
+  }
+  if (window.Html5Qrcode) {
+    try {
+      if (!fileScanner) fileScanner = new Html5Qrcode('fileReader', {formatsToSupport: SCAN_FORMATS(), verbose: false});
+      const blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', .92));
+      return await fileScanner.scanFile(new File([blob], 'barcode.jpg', {type: 'image/jpeg'}), false);
+    } catch (e) {}
+  }
+  return null;
+}
+async function scanPhoto(file) {
+  const hint = $('#scanHint');
+  if (hint) hint.textContent = 'Foto wird ausgewertet …';
+  try {
+    const img = await loadImage(file);
+    for (const [size, rot] of [[1400, false], [2200, false], [900, false], [1400, true], [2200, true]]) {
+      const raw = await detectOnCanvas(drawScaled(img, size, rot));
+      const code = String(raw || '').replace(/\D/g, '');
+      if (code.length >= 8) { try { navigator.vibrate?.(60); } catch (e) {} scanLock = true; lookupBarcode(code); return; }
+    }
+    if (hint) hint.textContent = 'Auf dem Foto wurde kein Barcode erkannt. Am besten den Barcode möglichst bildfüllend, scharf und gerade fotografieren, ohne Spiegelung durch die Schutzhülle.';
+  } catch (e) {
+    if (hint) hint.textContent = e.message;
+  }
+}
+async function stopScanner() {
+  const s = scanner; scanner = null;
+  if (!s) return;
+  try { if (s.isScanning) await s.stop(); } catch (e) {}
+  try { s.clear(); } catch (e) {}
+}
+function validCode(c) {
+  if (c.length === 8) return true;
+  if (c.length !== 12 && c.length !== 13) return false;
+  const d = c.split('').map(Number), check = d.pop();
+  const sum = d.reverse().reduce((s, n, i) => s + n * (i % 2 === 0 ? 3 : 1), 0);
+  return (10 - sum % 10) % 10 === check;
+}
+function onScan(text) {
+  const code = String(text).replace(/\D/g, '');
+  if (scanLock || !validCode(code)) return;
+  scanLock = true;
+  try { navigator.vibrate?.(60); } catch (e) {}
+  lookupBarcode(code);
+}
+
+/* ---------- MusicBrainz ---------- */
+let mbLast = 0;
+async function mbFetch(path) {
+  const wait = mbLast + 1100 - Date.now(); // MusicBrainz erlaubt etwa eine Anfrage pro Sekunde
+  if (wait > 0) await sleep(wait);
+  mbLast = Date.now();
+  const r = await fetch('https://musicbrainz.org/ws/2/' + path + (path.includes('?') ? '&' : '?') + 'fmt=json', {headers: {Accept: 'application/json'}});
+  if (r.status === 503) throw new Error('MusicBrainz ist gerade ausgelastet. Bitte gleich nochmal versuchen.');
+  if (!r.ok) throw new Error(`MusicBrainz antwortet nicht (Fehler ${r.status}).`);
+  return r.json();
+}
+const titleCase = s => String(s || '').replace(/(^|[\s-])(\p{L})/gu, (m, a, b) => a + b.toUpperCase());
+function mapMbRelease(x) {
+  const ac = x['artist-credit'] || [];
+  const artist = ac.map(a => (a.name || a.artist?.name || '') + (a.joinphrase || '')).join('').trim();
+  const li = (x['label-info'] || [])[0] || {};
+  const media = x.media || [];
+  const formats = [...new Set(media.map(m => m.format).filter(Boolean))].join(', ');
+  const rg = x['release-group'] || {};
+  return {
+    source: 'musicbrainz', sourceId: x.id, artist,
+    artistSort: ac.length === 1 && ac[0].artist?.['sort-name'] ? ac[0].artist['sort-name'] : defaultSort(artist),
+    title: x.title || '', year: (x.date || '').slice(0, 4), origYear: (rg['first-release-date'] || '').slice(0, 4),
+    country: x.country || '', label: li.label?.name || '', catno: li['catalog-number'] || '',
+    format: formats + (media.length > 1 ? ` (${media.length} Platten)` : ''),
+    cover: `https://coverartarchive.org/release/${x.id}/front-250`,
+    coverFallback: rg.id ? `https://coverartarchive.org/release-group/${rg.id}/front-250` : '',
+    rgid: rg.id || '', barcode: x.barcode || ''
+  };
+}
+async function mbSearch(query) {
+  const data = await mbFetch('release/?limit=20&query=' + encodeURIComponent(query));
+  return (data.releases || []).map(mapMbRelease);
+}
+function barcodeQuery(code) {
+  const alts = new Set([code]);
+  if (code.length === 13 && code[0] === '0') alts.add(code.slice(1));
+  if (code.length === 12) alts.add('0' + code);
+  return [...alts].map(c => 'barcode:' + c).join(' OR ');
+}
+async function mbDetails(r) {
+  const x = await mbFetch(`release/${r.sourceId}?inc=artist-credits+labels+release-groups+genres`);
+  const d = mapMbRelease(x);
+  let genres = x.genres || [];
+  if (!genres.length && d.rgid) { try { genres = (await mbFetch(`release-group/${d.rgid}?inc=genres`)).genres || []; } catch (e) {} }
+  genres = genres.slice().sort((a, b) => (b.count || 0) - (a.count || 0)).map(g => titleCase(g.name));
+  d.genre = genres[0] || ''; d.styles = genres.slice(1, 4);
+  d.origYear = d.origYear || d.year;
+  d.format = d.format || r.format;
+  return d;
+}
+
+/* ---------- Discogs (optional, mit Token) ---------- */
+async function dgSearch(params) {
+  const u = new URL('https://api.discogs.com/database/search');
+  Object.entries({type: 'release', per_page: 20, ...params, token: settings.discogsToken}).forEach(([k, v]) => { if (v) u.searchParams.set(k, v); });
+  const r = await fetch(u);
+  if (r.status === 401) throw new Error('Discogs: Der Token ist ungültig. Bitte in den Einstellungen prüfen.');
+  if (r.status === 429) throw new Error('Discogs: Zu viele Anfragen. Bitte eine Minute warten.');
+  if (!r.ok) throw new Error(`Discogs antwortet nicht (Fehler ${r.status}).`);
+  const data = await r.json();
+  return (data.results || []).map(x => {
+    const parts = (x.title || '').split(' - ');
+    const artist = (parts.length > 1 ? parts.shift() : '').replace(/\s\(\d+\)/g, '').replace(/\*/g, '').trim();
+    const cover = x.cover_image && !/spacer\.gif/.test(x.cover_image) ? x.cover_image : (x.thumb || '');
+    return {
+      source: 'discogs', sourceId: String(x.id), artist, artistSort: defaultSort(artist), title: parts.join(' - '),
+      year: x.year ? String(x.year) : '', origYear: x.year ? String(x.year) : '', country: x.country || '',
+      label: (x.label || [])[0] || '', catno: x.catno || '', format: [...new Set(x.format || [])].join(', '),
+      genre: (x.genre || [])[0] || '', styles: x.style || [], cover, barcode: ''
+    };
+  });
+}
+
+/* ---------- Suche und Treffer ---------- */
+const isVinyl = r => /vinyl|LP\b/i.test(r.format || '') ? 1 : 0;
+async function lookupBarcode(code) {
+  const id = ++flow;
+  const existing = records.filter(r => r.barcode && r.barcode.replace(/^0+/, '') === code.replace(/^0+/, ''));
+  openSheet(loadingHTML(`Suche nach Barcode ${code} …`));
+  const tasks = [mbSearch(barcodeQuery(code))];
+  if (settings.discogsToken) tasks.push(dgSearch({barcode: code}));
+  const res = await Promise.allSettled(tasks);
+  if (id !== flow) return;
+  showResults(res, {barcode: code, existing, label: `Barcode ${code}`});
+}
+function openTextSearch() {
+  openSheet(`<h2 class="sheet-title">Platte suchen</h2>
+    <p class="hint">Mindestens ein Feld ausfüllen. Die Katalognummer steht meist auf dem Plattenetikett oder dem Rücken der Hülle.</p>
+    <form id="tsForm" class="form">${field('artist', 'Künstler')}${field('title', 'Titel')}${field('catno', 'Katalognummer')}<button class="btn primary wide">Suchen</button></form>`,
+  body => { $('#tsForm', body).onsubmit = e => { e.preventDefault(); textLookup(Object.fromEntries(new FormData(e.target))); }; });
+}
+async function textLookup(f) {
+  const clean = v => String(v || '').trim().replace(/["\\]/g, '');
+  const a = clean(f.artist), t = clean(f.title), c = clean(f.catno);
+  if (!a && !t && !c) { toast('Bitte mindestens ein Feld ausfüllen.'); return; }
+  const parts = [];
+  if (a) parts.push(`artist:"${a}"`);
+  if (t) parts.push(`release:"${t}"`);
+  if (c) parts.push(`catno:"${c}"`);
+  const id = ++flow;
+  openSheet(loadingHTML('Suche …'));
+  const tasks = [mbSearch(parts.join(' AND '))];
+  if (settings.discogsToken) tasks.push(dgSearch({artist: a, release_title: t, catno: c}));
+  const res = await Promise.allSettled(tasks);
+  if (id !== flow) return;
+  showResults(res, {barcode: '', existing: [], label: [a, t, c].filter(Boolean).join(', ')});
+}
+function showResults(settled, ctx) {
+  const results = [], errors = [];
+  settled.forEach(s => s.status === 'fulfilled' ? results.push(...s.value) : errors.push(s.reason?.message || 'Unbekannter Fehler'));
+  results.sort((a, b) => isVinyl(b) - isVinyl(a));
+  const ex = ctx.existing.map(r => `<div class="warn">Schon im Regal: <strong>${esc(r.artist)} – ${esc(r.title)}</strong> (Nr. ${esc(r.inv)}${r.shelf ? ', Fach ' + esc(r.shelf) : ''})<br><button class="btn ghost" data-show="${esc(r.id)}">Ansehen</button></div>`).join('');
+  const list = results.map((r, i) => `<button class="result" data-i="${i}">${coverHTML(r)}<span><span class="a">${esc(r.artist)} – ${esc(r.title)}</span><br><span class="m">${esc([r.year, r.country, [r.label, r.catno].filter(Boolean).join(' '), r.format].filter(Boolean).join(', '))}</span><br>${isVinyl(r) ? '<span class="badge vinyl">Vinyl</span> ' : ''}<span class="badge">${r.source === 'discogs' ? 'Discogs' : 'MusicBrainz'}</span></span></button>`).join('');
+  openSheet(`<h2 class="sheet-title">${results.length ? 'Welche Pressung?' : 'Nichts gefunden'}</h2>
+    <p class="hint">${esc(ctx.label)}${results.length ? `, ${results.length} Treffer` : ''}</p>
+    ${ex}
+    ${errors.map(e => `<div class="warn">${esc(e)}</div>`).join('')}
+    ${results.length ? `<div class="results">${list}</div>` : `<p class="hint">Zu diesem ${ctx.barcode ? 'Barcode' : 'Suchbegriff'} gibt es keinen Eintrag${settings.discogsToken ? '' : ' bei MusicBrainz. Mit einem Discogs-Token (Einstellungen) findet die App deutlich mehr Pressungen'}. Alternativ über Künstler und Titel suchen oder die Platte von Hand eintragen.</p>`}
+    <div class="alt-actions"><button class="btn ghost" id="again">Nochmal scannen</button><button class="btn ghost" id="toText">Anders suchen</button><button class="btn ghost" id="toManual">Von Hand eintragen</button></div>`,
+  body => {
+    body.querySelectorAll('[data-i]').forEach(b => b.onclick = () => chooseResult(results[+b.dataset.i], ctx.barcode));
+    body.querySelectorAll('[data-show]').forEach(b => b.onclick = () => openDetail(b.dataset.show));
+    $('#again', body).onclick = openScanner;
+    $('#toText', body).onclick = openTextSearch;
+    $('#toManual', body).onclick = () => openEdit({...emptyDraft(), barcode: ctx.barcode}, true);
+  });
+}
+async function chooseResult(r, barcode) {
+  let d = r;
+  if (r.source === 'musicbrainz') {
+    const id = ++flow;
+    openSheet(loadingHTML('Lade Details …'));
+    try { d = await mbDetails(r); } catch (e) { d = r; }
+    if (id !== flow) return;
+  }
+  openEdit(draftFrom(d, barcode), true);
+}
+const emptyDraft = () => ({id: null, artist: '', artistSort: '', title: '', year: '', origYear: '', genre: '', styles: [], label: '', catno: '', country: '', format: 'Vinyl, LP', barcode: '', cover: '', coverFallback: '', source: 'manual', sourceId: '', shelf: '', tags: [], condition: '', rating: 0, notes: ''});
+function draftFrom(r, barcode) {
+  return {...emptyDraft(), artist: r.artist, artistSort: r.artistSort, title: r.title, year: r.year, origYear: r.origYear || r.year,
+    genre: r.genre || '', styles: r.styles || [], label: r.label, catno: r.catno, country: r.country, format: r.format,
+    barcode: barcode || r.barcode || '', cover: r.cover || '', coverFallback: r.coverFallback || '', source: r.source, sourceId: r.sourceId};
+}
+
+/* ---------- Bearbeiten ---------- */
+const nextInv = () => Math.max(0, ...records.map(r => r.inv || 0)) + 1;
+const uniq = arr => [...new Set(arr.filter(Boolean))].sort(coll.compare);
+const datalist = (id, arr) => `<datalist id="${id}">${arr.map(v => `<option value="${esc(v)}">`).join('')}</datalist>`;
+function openEdit(d, isNew) {
+  const inv = d.inv || nextInv();
+  openSheet(`<h2 class="sheet-title">${isNew ? 'Platte hinzufügen' : 'Platte bearbeiten'}</h2>
+    <div class="edit-head">${coverHTML(d)}<div><div class="a">${esc(d.artist || 'Neue Platte')}</div><div>${esc(d.title)}</div>${d.source && d.source !== 'manual' ? `<div class="m">Daten von ${d.source === 'discogs' ? 'Discogs' : 'MusicBrainz'}. Bitte kurz prüfen.</div>` : ''}</div></div>
+    <form id="editForm" class="form">
+      <fieldset><legend>Platte</legend>
+        ${field('artist', 'Künstler', d.artist, 'required')}
+        ${field('artistSort', 'Einsortieren unter', d.artistSort, 'placeholder="z. B. Bowie, David"')}
+        ${field('title', 'Titel', d.title, 'required')}
+        <div class="two">${field('year', 'Jahr dieser Pressung', d.year, 'inputmode="numeric" maxlength="4"')}${field('origYear', 'Erstveröffentlichung', d.origYear, 'inputmode="numeric" maxlength="4"')}</div>
+        ${field('genre', 'Genre', d.genre, 'list="dl-genres"')}
+        ${field('styles', 'Stile, mit Komma getrennt', (d.styles || []).join(', '))}
+        <div class="two">${field('label', 'Label', d.label)}${field('catno', 'Katalognummer', d.catno)}</div>
+        <div class="two">${field('country', 'Land', d.country)}${field('format', 'Format', d.format)}</div>
+        ${field('barcode', 'Barcode', d.barcode, 'inputmode="numeric"')}
+      </fieldset>
+      <fieldset><legend>In meinem Regal</legend>
+        <div class="two">${field('inv', 'Inventarnummer', inv, 'inputmode="numeric" required')}${field('shelf', 'Regalfach', d.shelf, 'list="dl-shelves" placeholder="z. B. A3"')}</div>
+        ${field('tags', 'Eigene Kategorien, mit Komma getrennt', (d.tags || []).join(', '), 'placeholder="z. B. Sonntagmorgen, Erbstück"')}
+        <label class="field"><span>Zustand</span><select name="condition">${CONDITIONS.map(([v, l]) => `<option value="${v}"${v === (d.condition || '') ? ' selected' : ''}>${l}</option>`).join('')}</select></label>
+        <div class="field"><span>Bewertung</span><div class="stars" data-r="${d.rating || 0}">${[1, 2, 3, 4, 5].map(n => `<label><input type="radio" name="rating" value="${n}"${d.rating === n ? ' checked' : ''}><span aria-label="${n} von 5 Sternen">★</span></label>`).join('')}<label class="nostar"><input type="radio" name="rating" value="0"${!d.rating ? ' checked' : ''}><span>keine</span></label></div></div>
+        <label class="field"><span>Notizen</span><textarea name="notes" rows="3">${esc(d.notes)}</textarea></label>
+      </fieldset>
+      ${datalist('dl-shelves', uniq(records.map(r => r.shelf)))}${datalist('dl-genres', uniq(records.map(r => r.genre)))}
+      <button class="btn primary wide" type="submit">Speichern</button>
+    </form>`,
+  body => {
+    const stars = $('.stars', body);
+    stars.addEventListener('change', e => { stars.dataset.r = e.target.value; });
+    $('#editForm', body).onsubmit = e => { e.preventDefault(); saveRecord(d, new FormData(e.target), isNew); };
+  });
+}
+async function saveRecord(d, fd, isNew) {
+  const g = k => String(fd.get(k) || '').trim();
+  const list = k => g(k).split(',').map(s => s.trim()).filter(Boolean);
+  const inv = parseInt(g('inv')) || nextInv();
+  const dup = records.find(r => r.inv === inv && r.id !== d.id);
+  if (dup && !confirm(`Die Inventarnummer ${inv} hat schon „${dup.artist} – ${dup.title}“. Trotzdem speichern?`)) return;
+  const rec = {...d, id: d.id || newId(), inv, artist: g('artist'), artistSort: g('artistSort') || defaultSort(g('artist')), title: g('title'),
+    year: g('year'), origYear: g('origYear'), genre: g('genre'), styles: list('styles'), label: g('label'), catno: g('catno'),
+    country: g('country'), format: g('format'), barcode: g('barcode').replace(/\D/g, ''), shelf: g('shelf'), tags: list('tags'),
+    condition: g('condition'), rating: parseInt(g('rating')) || 0, notes: g('notes'), addedAt: d.addedAt || Date.now(), updatedAt: Date.now()};
+  try { await dbPut(rec); } catch (e) { toast('Speichern fehlgeschlagen: ' + e.message); return; }
+  const i = records.findIndex(r => r.id === rec.id);
+  if (i >= 0) records[i] = rec; else records.push(rec);
+  requestPersist();
+  render();
+  if (isNew) { closeSheet(); toast(`Gespeichert als Nr. ${inv}: ${rec.artist} – ${rec.title}`, {label: 'Nächste scannen', fn: openScanner}); }
+  else { openDetail(rec.id); toast('Änderungen gespeichert'); }
+}
+
+/* ---------- Detailansicht ---------- */
+function openDetail(id) {
+  const r = records.find(x => x.id === id);
+  if (!r) return;
+  const yearText = r.year && r.origYear && r.origYear !== r.year ? `${r.year} (erstmals ${r.origYear})` : (r.year || r.origYear);
+  const meta = [['Jahr', yearText], ['Genre', [r.genre, ...(r.styles || [])].filter(Boolean).join(', ')], ['Label', [r.label, r.catno].filter(Boolean).join(', ')],
+    ['Land', r.country], ['Format', r.format], ['Barcode', r.barcode], ['Zustand', r.condition ? (CONDITIONS.find(c => c[0] === r.condition) || [, r.condition])[1] : ''],
+    ['Kategorien', (r.tags || []).join(', ')], ['Einsortiert unter', r.artistSort]].filter(([, v]) => v);
+  const link = r.source === 'discogs' ? `https://www.discogs.com/release/${encodeURIComponent(r.sourceId)}` : r.source === 'musicbrainz' ? `https://musicbrainz.org/release/${encodeURIComponent(r.sourceId)}` : '';
+  openSheet(`<div class="detail-cover">${coverHTML(r)}</div>
+    <h2 class="d-artist">${esc(r.artist)}</h2><p class="d-title">${esc(r.title)}</p>
+    <div class="d-place"><div><span>Inventarnummer</span><strong>${esc(r.inv)}</strong></div><div><span>Regalfach</span><strong>${esc(r.shelf || '–')}</strong></div>${r.rating ? `<div><span>Bewertung</span><strong class="stars-ro" aria-label="${r.rating} von 5 Sternen">${'★'.repeat(r.rating)}</strong></div>` : ''}</div>
+    <dl class="meta">${meta.map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join('')}</dl>
+    ${r.notes ? `<p class="notes">${esc(r.notes)}</p>` : ''}
+    <div class="actions"><button class="btn primary" id="editBtn">Bearbeiten</button>${link ? `<a class="btn ghost" href="${link}" target="_blank" rel="noopener">Bei ${r.source === 'discogs' ? 'Discogs' : 'MusicBrainz'} ansehen</a>` : ''}<button class="btn danger" id="delBtn">Löschen</button></div>`,
+  body => {
+    $('#editBtn', body).onclick = () => openEdit(r, false);
+    $('#delBtn', body).onclick = async () => {
+      if (!confirm(`„${r.artist} – ${r.title}“ aus dem Regal löschen?`)) return;
+      try { await dbDel(r.id); } catch (e) { toast('Löschen fehlgeschlagen: ' + e.message); return; }
+      records = records.filter(x => x.id !== r.id);
+      render(); closeSheet(); toast('Gelöscht');
+    };
+  });
+}
+
+/* ---------- Einstellungen, Sicherung, Export ---------- */
+async function shareOrDownload(blob, filename) {
+  const file = new File([blob], filename, {type: blob.type});
+  if (navigator.canShare && navigator.canShare({files: [file]})) {
+    try { await navigator.share({files: [file], title: filename}); return true; }
+    catch (e) { if (e.name === 'AbortError') return false; }
+  }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = filename;
+  document.body.append(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000);
+  return true;
+}
+async function exportJson() {
+  const blob = new Blob([JSON.stringify({app: 'plattenregal', version: 1, exportedAt: new Date().toISOString(), records}, null, 1)], {type: 'application/json'});
+  if (await shareOrDownload(blob, `plattenregal-sicherung-${today()}.json`)) {
+    settings.lastBackup = Date.now(); saveSettings(); render();
+    if (!$('#sheet').hidden) openSettings();
+    toast('Sicherung exportiert');
+  }
+}
+async function exportCsv() {
+  const cols = [['Inventarnummer', 'inv'], ['Künstler', 'artist'], ['Einsortiert unter', 'artistSort'], ['Titel', 'title'], ['Jahr', 'year'], ['Erstveröffentlichung', 'origYear'],
+    ['Genre', 'genre'], ['Stile', r => (r.styles || []).join(', ')], ['Label', 'label'], ['Katalognummer', 'catno'], ['Land', 'country'], ['Format', 'format'],
+    ['Barcode', r => r.barcode ? `="${r.barcode}"` : ''], ['Regalfach', 'shelf'], ['Kategorien', r => (r.tags || []).join(', ')], ['Zustand', 'condition'],
+    ['Bewertung', 'rating'], ['Notizen', 'notes'], ['Hinzugefügt', r => r.addedAt ? new Date(r.addedAt).toLocaleDateString('de-DE') : ''], ['Quelle', 'source'], ['Quell-ID', 'sourceId']];
+  const cell = v => '"' + String(v ?? '').replace(/"/g, '""') + '"';
+  const rows = records.slice().sort(cmpRecords('inv')).map(r => cols.map(([, k]) => cell(typeof k === 'function' ? k(r) : r[k])).join(';'));
+  const csv = '\uFEFF' + [cols.map(c => cell(c[0])).join(';'), ...rows].join('\r\n');
+  if (await shareOrDownload(new Blob([csv], {type: 'text/csv'}), `plattenregal-${today()}.csv`)) toast('Tabelle exportiert');
+}
+async function importJson(file) {
+  try {
+    const data = JSON.parse(await file.text());
+    const list = Array.isArray(data) ? data : data.records;
+    if (!Array.isArray(list)) throw new Error('Die Datei ist keine Plattenregal-Sicherung.');
+    const valid = list.filter(r => r && r.id && (r.artist || r.title));
+    if (!valid.length) throw new Error('Die Datei enthält keine Platten.');
+    if (!confirm(`${valid.length} Platten importieren? Einträge, die schon vorhanden sind, werden durch den Stand aus der Sicherung ersetzt.`)) return;
+    await dbPutMany(valid);
+    records = await dbAll();
+    requestPersist(); render(); openSettings();
+    toast(`${valid.length} Platten importiert`);
+  } catch (e) { toast('Import fehlgeschlagen: ' + e.message); }
+}
+function openSettings() {
+  const last = settings.lastBackup ? new Date(settings.lastBackup).toLocaleDateString('de-DE') : 'noch nie';
+  openSheet(`<h2 class="sheet-title">Einstellungen</h2>
+    <section class="set"><h3>Sicherung</h3>
+      <p class="hint">Die Sammlung ist nur auf diesem Gerät gespeichert. Letzte Sicherung: ${last}. Die Sicherungsdatei am besten in einer Cloud oder per E-Mail an sich selbst ablegen.</p>
+      <div class="stack">
+        <button class="btn primary" id="expJson">Sicherung exportieren</button>
+        <button class="btn ghost" id="expCsv">Als Tabelle exportieren (für Excel)</button>
+        <label class="btn ghost file">Sicherung importieren<input type="file" id="impFile" accept="application/json,.json" hidden></label>
+      </div>
+      <p class="hint small" id="persist"></p>
+    </section>
+    <section class="set"><h3>Discogs (optional)</h3>
+      <p class="hint">Mit einem persönlichen Discogs-Token sucht die App zusätzlich bei Discogs. Dort sind mehr Vinyl-Pressungen erfasst, und die Genre-Angaben sind genauer.</p>
+      <form id="tokForm" class="inline-form"><input name="tok" type="password" value="${esc(settings.discogsToken)}" placeholder="Token einfügen" autocomplete="off" aria-label="Discogs-Token"><button class="btn">Speichern</button></form>
+      <p class="hint small">Token erzeugen: bei Discogs anmelden, <a href="https://www.discogs.com/settings/developers" target="_blank" rel="noopener">Einstellungen für Entwickler</a> öffnen und „Generate new token“ wählen. Der Token bleibt nur auf diesem Gerät.</p>
+    </section>
+    <section class="set"><h3>Herkunft der Daten</h3>
+      <p class="hint small">Plattendaten von <a href="https://musicbrainz.org" target="_blank" rel="noopener">MusicBrainz</a> und optional Discogs, Cover vom Cover Art Archive.</p>
+    </section>`,
+  body => {
+    $('#expJson', body).onclick = exportJson;
+    $('#expCsv', body).onclick = exportCsv;
+    $('#impFile', body).onchange = e => { const f = e.target.files[0]; if (f) importJson(f); e.target.value = ''; };
+    $('#tokForm', body).onsubmit = e => { e.preventDefault(); settings.discogsToken = e.target.tok.value.trim(); saveSettings(); toast(settings.discogsToken ? 'Discogs-Token gespeichert' : 'Discogs-Token entfernt'); };
+    navigator.storage?.persisted?.().then(p => {
+      const el = $('#persist'); if (!el) return;
+      el.textContent = p ? 'Der Browser bewahrt die Daten dauerhaft auf.' : 'Der Browser darf die Daten bei Speichermangel löschen. Deshalb regelmäßig sichern.';
+    }).catch(() => {});
+  });
+}
+
+/* ---------- Start ---------- */
+const VIEW_ICONS = {
+  grid: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg>',
+  rows: '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="3" width="8" height="8" rx="1"/><rect x="3" y="13" width="8" height="8" rx="1"/><rect x="13" y="13" width="8" height="8" rx="1"/></svg>'
+};
+function updateViewBtn() {
+  const b = $('#viewBtn');
+  b.innerHTML = settings.view === 'grid' ? VIEW_ICONS.grid : VIEW_ICONS.rows;
+  b.setAttribute('aria-label', settings.view === 'grid' ? 'Als Liste anzeigen' : 'Als Cover-Raster anzeigen');
+}
+function initControls() {
+  const gs = $('#groupSel'), ss = $('#sortSel');
+  gs.innerHTML = Object.entries(GROUPS).map(([k, v]) => `<option value="${k}">${v}</option>`).join('');
+  ss.innerHTML = Object.entries(SORTS).map(([k, v]) => `<option value="${k}">${v}</option>`).join('');
+  gs.value = settings.group in GROUPS ? settings.group : 'letter';
+  ss.value = settings.sort in SORTS ? settings.sort : 'artist';
+  gs.onchange = () => { settings.group = gs.value; saveSettings(); render(); };
+  ss.onchange = () => { settings.sort = ss.value; saveSettings(); render(); };
+  $('#viewBtn').onclick = () => { settings.view = settings.view === 'grid' ? 'rows' : 'grid'; saveSettings(); updateViewBtn(); render(); };
+  updateViewBtn();
+  $('#search').addEventListener('input', render);
+  $('#scanBtn').onclick = openScanner;
+  $('#settingsBtn').onclick = openSettings;
+  $('#list').addEventListener('click', e => {
+    if (e.target.closest('[data-action="backup"]')) { exportJson(); return; }
+    const b = e.target.closest('[data-id]'); if (b) openDetail(b.dataset.id);
+  });
+  $('#sheet').addEventListener('click', e => { if (e.target.closest('[data-close]')) closeSheet(); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#sheet').hidden) closeSheet(); });
+}
+(async function init() {
+  initControls();
+  try { records = await dbAll(); }
+  catch (e) { $('#list').innerHTML = '<p class="empty">Die Datenbank konnte nicht geöffnet werden. Im privaten Modus des Browsers kann die App nichts speichern.</p>'; return; }
+  render();
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(() => {});
+})();
+</script>
+</body>
+</html>
