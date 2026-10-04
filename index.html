@@ -351,6 +351,29 @@ textarea{resize:vertical}
 .badge.price{background:rgba(240,162,59,.14);border-color:rgba(240,162,59,.4);color:var(--accent)}
 .mval{color:var(--accent);font-size:.82rem;margin-top:4px;font-family:var(--mono)}
 .set.market .tiles{margin-bottom:6px}
+.wish-head{display:flex;gap:10px;align-items:center;justify-content:space-between;margin-top:18px;flex-wrap:wrap}
+.wish-head .hint{margin:0}
+.rec .w{font-family:var(--mono);font-size:.7rem;color:var(--accent);margin-top:1px}
+.warn.wishhit{border-left-color:var(--accent);background:rgba(240,162,59,.12)}
+.mode{display:flex;gap:4px;padding:4px;background:var(--field);border:1px solid var(--line);border-radius:12px;margin:0 0 12px}
+.mode button{flex:1;border:0;background:none;color:var(--muted);border-radius:9px;padding:9px 8px;font-weight:700;font-stretch:90%}
+.mode button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink)}
+.store-card{margin-top:14px;background:var(--field);border:1px solid var(--line);border-radius:14px;padding:12px}
+.store-card .top{display:grid;grid-template-columns:72px 1fr;gap:12px;align-items:center;padding:0;max-width:none}
+.store-card .a{font-weight:800;font-stretch:80%;font-size:1.1rem;line-height:1.15}
+.store-card .m{color:var(--muted);font-size:.8rem}
+.store-status{margin:10px 0 0;padding:8px 10px;border-radius:9px;font-weight:700;font-size:.92rem;background:var(--surface-2)}
+.store-status.own{background:rgba(217,87,59,.18);color:#ffb3a3}
+.store-status.wish{background:rgba(240,162,59,.18);color:var(--accent)}
+.store-status.new{background:rgba(120,190,120,.14);color:#b7e0b0}
+.store-price{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
+.store-price div{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:8px 10px}
+.store-price span{display:block;font-family:var(--mono);font-size:.6rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.store-price strong{font-size:1.35rem;font-stretch:72%;font-weight:800}
+.store-log{margin-top:18px}
+.store-log h3{margin:0 0 6px;font-family:var(--mono);font-size:.66rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:400}
+.store-log button{display:grid;grid-template-columns:1fr auto;gap:10px;width:100%;text-align:left;background:none;border:0;border-bottom:1px solid var(--line);padding:8px 2px;color:var(--ink);font-size:.88rem}
+.store-log button span:last-child{font-family:var(--mono);font-size:.74rem;color:var(--muted);white-space:nowrap}
 .sync.alert{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:700}
 </style>
 </head>
@@ -409,7 +432,7 @@ const SORTS = {artist: 'Künstler', title: 'Titel', year: 'Jahr', added: 'Neuest
 const CONDITIONS = [['', 'nicht angegeben'], ['M', 'M – neuwertig, ungespielt'], ['NM', 'NM – fast neuwertig'], ['VG+', 'VG+ – sehr gut, leichte Spuren'], ['VG', 'VG – gut, hörbare Gebrauchsspuren'], ['G+', 'G+ – deutlich gebraucht'], ['G', 'G – stark gebraucht'], ['P', 'P – schlecht']];
 
 /* ---------- Einstellungen (nur auf diesem Gerät) ---------- */
-const settings = {group: 'letter', sort: 'artist', view: 'grid', discogsToken: '', lastBackup: 0, tab: 'shelf',
+const settings = {group: 'letter', sort: 'artist', view: 'grid', discogsToken: '', lastBackup: 0, tab: 'shelf', storeMode: false,
   driveOn: false, driveFolderId: '', driveFileId: '', lastSync: 0, driveDirty: false};
 try { Object.assign(settings, JSON.parse(localStorage.getItem('plattenregal-settings') || '{}')); } catch (e) {}
 function saveSettings() { try { localStorage.setItem('plattenregal-settings', JSON.stringify(settings)); } catch (e) {} }
@@ -454,6 +477,15 @@ function requestPersist() {
 }
 
 /* ---------- Sortieren und Gruppieren ---------- */
+const inShelf = r => !r.sold && !r.wish;
+const normTitle = s => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s*\(\d+\)|\*/g, '').replace(/^the\s+/, '').replace(/[^a-z0-9]+/g, '');
+const sameRelease = (a, b) => normTitle(a.artist) === normTitle(b.artist) && normTitle(a.title) === normTitle(b.title);
+const sameCode = (a, b) => a && b && String(a).replace(/^0+/, '') === String(b).replace(/^0+/, '');
+// Eigene Platten, frühere Verkäufe und Wünsche zu einem Barcode bzw. zu gefundenen Pressungen
+function relatedRecords(code, results = []) {
+  const ids = new Set(results.filter(x => x.source === 'discogs').map(x => x.sourceId));
+  return records.filter(r => sameCode(r.barcode, code) || (r.discogsId && ids.has(r.discogsId)) || results.some(x => sameRelease(r, x)));
+}
 const sortKey = r => (r.artistSort || r.artist || '').trim();
 const yearOf = r => parseInt(r.origYear || r.year) || 0;
 function defaultSort(artist) {
@@ -508,25 +540,29 @@ document.addEventListener('error', e => {
   img.outerHTML = discHTML(img.dataset.hue, img.dataset.ini);
 }, true);
 
-const gridItem = r => `<button class="rec${r.sold ? ' sold' : ''}" data-id="${esc(r.id)}"><span class="sleeve">${coverHTML(r)}${r.sold ? '<span class="stamp">Verkauft</span>' : ''}<span class="lp" style="--h:${hue(r.artist)}"></span></span><span class="a">${esc(r.artist)}</span><span class="t">${esc(r.title)}</span></button>`;
-const rowItem = r => `<button class="row${r.sold ? ' sold' : ''}" data-id="${esc(r.id)}">${coverHTML(r)}<span class="txt"><span class="a">${esc(r.artist)}</span><span class="t">${esc(r.title)}</span><span class="m">${esc([yearOf(r) || '', r.label].filter(Boolean).join(', '))}</span></span><span class="side">${r.shelf ? `<span class="shelf">${esc(r.shelf)}</span>` : ''}<span>${r.sold ? esc(priceText(r.soldPrice) || 'verkauft') : 'Nr. ' + esc(r.inv)}</span></span></button>`;
+const wishLine = r => r.wish ? [hasPrice(r.maxPrice) ? 'max. ' + priceText(r.maxPrice) : '', r.market && r.market.value ? 'ca. ' + money(r.market.value, r.market.currency) : ''].filter(Boolean).join(' · ') : '';
+const gridItem = r => `<button class="rec${r.sold ? ' sold' : ''}" data-id="${esc(r.id)}"><span class="sleeve">${coverHTML(r)}${r.sold ? '<span class="stamp">Verkauft</span>' : ''}<span class="lp" style="--h:${hue(r.artist)}"></span></span><span class="a">${esc(r.artist)}</span><span class="t">${esc(r.title)}</span>${r.wish && wishLine(r) ? `<span class="w">${esc(wishLine(r))}</span>` : ''}</button>`;
+const rowItem = r => `<button class="row${r.sold ? ' sold' : ''}" data-id="${esc(r.id)}">${coverHTML(r)}<span class="txt"><span class="a">${esc(r.artist)}</span><span class="t">${esc(r.title)}</span><span class="m">${esc([yearOf(r) || '', r.label].filter(Boolean).join(', '))}</span></span><span class="side">${r.shelf ? `<span class="shelf">${esc(r.shelf)}</span>` : ''}<span>${r.sold ? esc(priceText(r.soldPrice) || 'verkauft') : r.wish ? esc(wishLine(r) || 'gesucht') : 'Nr. ' + esc(r.inv)}</span></span></button>`;
 
 function render() {
   const list = $('#list');
   const q = $('#search').value.trim().toLowerCase();
-  const n = records.length, nSold = records.filter(r => r.sold).length, nShelf = n - nSold;
-  $('#count').textContent = n ? `${nShelf} ${nShelf === 1 ? 'Platte' : 'Platten'} im Regal${nSold ? ` · ${nSold} verkauft` : ''}` : '';
-  if (!nSold) settings.tab = 'shelf';
-  const soldTab = settings.tab === 'sold';
+  const n = records.length, nSold = records.filter(r => r.sold).length, nWish = records.filter(r => r.wish).length, nShelf = n - nSold - nWish;
+  $('#count').textContent = n ? `${nShelf} ${nShelf === 1 ? 'Platte' : 'Platten'} im Regal${nWish ? ` · ${nWish} gesucht` : ''}${nSold ? ` · ${nSold} verkauft` : ''}` : '';
+  if (settings.tab === 'sold' && !nSold) settings.tab = 'shelf';
+  const tab = ['wish', 'sold'].includes(settings.tab) ? settings.tab : 'shelf';
+  const soldTab = tab === 'sold';
+  const inTab = r => tab === 'sold' ? !!r.sold : tab === 'wish' ? !!r.wish : inShelf(r);
   if (!n) {
     list.innerHTML = `<div class="empty"><span class="cover">${discHTML(45, '')}</span><p><strong>Das Regal ist noch leer.</strong></p><p>Mit „Platte scannen“ den Barcode auf der Rückseite der Hülle erfassen. Platten ohne Barcode lassen sich über Künstler und Titel suchen.</p></div>`;
     return;
   }
-  const items = records.filter(r => !!r.sold === soldTab && matches(r, q)).sort(cmpRecords(soldTab && settings.sort === 'added' ? 'sold' : settings.sort));
-  let html = nSold ? `<div class="tabs" role="tablist"><button role="tab" data-tab="shelf" aria-selected="${!soldTab}">Im Regal<b>${nShelf}</b></button><button role="tab" data-tab="sold" aria-selected="${soldTab}">Verkauft<b>${nSold}</b></button></div>` : '';
+  const items = records.filter(r => inTab(r) && matches(r, q)).sort(cmpRecords(soldTab && settings.sort === 'added' ? 'sold' : settings.sort));
+  let html = `<div class="tabs" role="tablist"><button role="tab" data-tab="shelf" aria-selected="${tab === 'shelf'}">Im Regal<b>${nShelf}</b></button><button role="tab" data-tab="wish" aria-selected="${tab === 'wish'}">Wunschliste<b>${nWish}</b></button>${nSold ? `<button role="tab" data-tab="sold" aria-selected="${soldTab}">Verkauft<b>${nSold}</b></button>` : ''}</div>`;
+  if (tab === 'wish') html += `<div class="wish-head"><p class="hint">${nWish ? 'Steht eine Platte von hier im Laden, meldet sich die App beim Scannen.' : 'Platten, die du suchst. Beim Scannen im Laden meldet sich die App, wenn eine davon auftaucht.'}</p><button class="btn ghost" data-action="addwish">+ Wunsch hinzufügen</button></div>`;
   const stale = Date.now() - Math.max(settings.lastBackup || 0, settings.driveOn ? settings.lastSync || 0 : 0) > 30 * 864e5;
   if (n >= 5 && stale && !q) html += `<div class="notice"><span>${settings.lastBackup ? 'Die letzte Sicherung ist über 30 Tage her.' : 'Noch keine Sicherung erstellt.'}</span><button class="btn ghost" data-action="backup">Jetzt sichern</button></div>`;
-  if (!items.length) { list.innerHTML = html + `<p class="empty">${q ? `Keine Platte passt zu „${esc(q)}“.` : 'Alle Platten sind verkauft. Zeit für den nächsten Plattenladen.'}</p>`; return; }
+  if (!items.length) { list.innerHTML = html + (q ? `<p class="empty">Keine Platte passt zu „${esc(q)}“.</p>` : tab === 'shelf' ? `<p class="empty">Gerade steht nichts im Regal. Zeit für den nächsten Plattenladen.</p>` : ''); return; }
   const groups = new Map();
   for (const r of items) { const g = groupOf(r, settings.group); if (!groups.has(g)) groups.set(g, []); groups.get(g).push(r); }
   const keys = settings.group === 'none' ? [...groups.keys()] : [...groups.keys()].sort(cmpGroups);
@@ -536,7 +572,7 @@ function render() {
 }
 
 /* ---------- Blatt, Hinweise ---------- */
-let sheetCleanup = null, flow = 0;
+let sheetCleanup = null, flow = 0, wishFlow = false; // wishFlow: aktuelle Suche legt einen Wunsch an
 function runCleanup() { if (sheetCleanup) { try { sheetCleanup(); } catch (e) {} sheetCleanup = null; } }
 function openSheet(html, onMount) {
   runCleanup();
@@ -547,7 +583,7 @@ function openSheet(html, onMount) {
   if (onMount) sheetCleanup = onMount($('#sheetBody')) || null;
 }
 function closeSheet() {
-  flow++; runCleanup();
+  flow++; runCleanup(); wishFlow = false;
   $('#sheet').hidden = true; document.body.classList.remove('locked');
   $('#sheetBody').innerHTML = '';
 }
@@ -575,13 +611,18 @@ const field = (name, label, value = '', attrs = '') => `<label class="field"><sp
 /* ---------- Scanner ---------- */
 let scanner = null, scanLock = false;
 function openScanner() {
-  openSheet(`<h2 class="sheet-title">Platte scannen</h2>
+  const store = settings.storeMode && !wishFlow;
+  openSheet(`<h2 class="sheet-title">${wishFlow ? 'Wunsch scannen' : store ? 'Ladenmodus' : 'Platte scannen'}</h2>
+    ${wishFlow ? '' : `<div class="mode" role="group" aria-label="Modus"><button data-mode="add" aria-pressed="${!store}">Hinzufügen</button><button data-mode="store" aria-pressed="${store}">Ladenmodus</button></div>`}
     <div id="reader" class="reader"></div>
     <p class="hint" id="scanHint">Kamera auf den Barcode auf der Rückseite der Hülle richten. Bei Spiegelungen die Schutzhülle kurz abnehmen.</p>
     <button class="btn ghost" id="retryCam" hidden>Kamera erneut starten</button>
-    <label class="btn primary wide photo-btn">Foto vom Barcode verwenden<input type="file" id="photoInput" accept="image/*" hidden></label>
+    ${store ? `<div id="storeOut"></div>
+    <form id="codeForm" class="inline-form"><input name="code" inputmode="numeric" placeholder="Barcode eintippen" aria-label="Barcode eintippen" autocomplete="off"><button class="btn">Prüfen</button></form>
+    <div id="storeLog" class="store-log">${storeLogHTML()}</div>
+    <p class="hint small">Nur prüfen, nichts wird gespeichert: Die App zeigt, ob du die Platte schon hast, ob sie auf deiner Wunschliste steht${settings.discogsToken ? ' und was sie bei Discogs wert ist' : ''}. Einfach eine Platte nach der anderen scannen.</p>` : `<label class="btn primary wide photo-btn">Foto vom Barcode verwenden<input type="file" id="photoInput" accept="image/*" hidden></label>
     <form id="codeForm" class="inline-form"><input name="code" inputmode="numeric" placeholder="Barcode eintippen" aria-label="Barcode eintippen" autocomplete="off"><button class="btn">Suchen</button></form>
-    <div class="alt-actions"><button class="btn ghost" id="toText">Ohne Barcode suchen</button><button class="btn ghost" id="toManual">Von Hand eintragen</button></div>`,
+    <div class="alt-actions"><button class="btn ghost" id="toText">Ohne Barcode suchen</button><button class="btn ghost" id="toManual">Von Hand eintragen</button></div>`}`,
   body => {
     scanLock = false;
     startScanner();
@@ -589,12 +630,17 @@ function openScanner() {
       e.preventDefault();
       const c = e.target.code.value.replace(/\D/g, '');
       if (c.length < 8) { toast('Ein Barcode hat mindestens 8 Ziffern.'); return; }
-      lookupBarcode(c);
+      handleCode(c);
+      if (store) e.target.code.value = '';
     });
-    $('#toText', body).onclick = () => openTextSearch();
-    $('#toManual', body).onclick = () => openEdit(emptyDraft(), true);
+    body.querySelectorAll('[data-mode]').forEach(b => b.onclick = () => { const m = b.dataset.mode === 'store'; if (m === store) return; settings.storeMode = m; saveSettings(); openScanner(); });
+    if (store) { $('#storeLog', body).onclick = e => { const b = e.target.closest('[data-log]'); if (b) showStoreCard(storeLog[+b.dataset.log]); }; }
+    else {
+      $('#toText', body).onclick = () => openTextSearch();
+      $('#toManual', body).onclick = () => openEdit({...emptyDraft(), wish: wishFlow}, true);
+    }
     $('#retryCam', body).onclick = async () => { $('#retryCam').hidden = true; $('#scanHint').textContent = 'Kamera wird gestartet …'; await stopScanner(); startScanner(); };
-    $('#photoInput', body).onchange = e => { const f = e.target.files[0]; e.target.value = ''; if (f) scanPhoto(f); };
+    if (!store) $('#photoInput', body).onchange = e => { const f = e.target.files[0]; e.target.value = ''; if (f) scanPhoto(f); };
     return stopScanner;
   });
 }
@@ -703,9 +749,88 @@ function validCode(c) {
 function onScan(text) {
   const code = String(text).replace(/\D/g, '');
   if (scanLock || !validCode(code)) return;
+  if (settings.storeMode && !wishFlow && $('#storeOut')) {
+    // Ladenmodus: Kamera läuft weiter, dieselbe Platte nicht mehrfach hintereinander prüfen
+    if (code === storeLast.code && Date.now() - storeLast.at < 4000) return;
+    storeLast = {code, at: Date.now()};
+    try { navigator.vibrate?.(60); } catch (e) {}
+    storeCheck(code);
+    return;
+  }
   scanLock = true;
   try { navigator.vibrate?.(60); } catch (e) {}
   lookupBarcode(code);
+}
+function handleCode(code) { if (settings.storeMode && !wishFlow && $('#storeOut')) storeCheck(code); else lookupBarcode(code); }
+
+/* ---------- Ladenmodus: nur prüfen, nichts speichern ---------- */
+let storeLast = {code: '', at: 0}, storeSeq = 0;
+const storeLog = []; // in dieser Sitzung geprüfte Platten
+function storeLogHTML() {
+  if (!storeLog.length) return '';
+  return `<h3>Bisher geprüft</h3>${storeLog.map((e, i) => `<button data-log="${i}"><span>${e.status === 'own' ? '● ' : e.status === 'wish' ? '★ ' : ''}${esc(e.top ? `${e.top.artist} – ${e.top.title}` : 'Barcode ' + e.code)}</span><span>${e.value ? 'ca. ' + esc(money(e.value.value, e.value.currency)) : ''}</span></button>`).join('')}`;
+}
+const exactMatch = (r, e) => sameCode(r.barcode, e.code) || (r.discogsId && e.top && e.top.source === 'discogs' && r.discogsId === e.top.sourceId);
+async function storeCheck(code) {
+  const seq = ++storeSeq;
+  if (!$('#storeOut')) return;
+  $('#storeOut').innerHTML = `<div class="store-card"><p class="hint" style="margin:0">Barcode ${esc(code)} wird geprüft …</p></div>`;
+  const res = await searchSources(() => dgSearch({barcode: code}), () => mbSearch(barcodeQuery(code)));
+  if (seq !== storeSeq || !$('#storeOut')) return;
+  const found = res.flatMap(x => x.status === 'fulfilled' ? x.value : []).sort((a, b) => isVinyl(b) - isVinyl(a));
+  const related = relatedRecords(code, found);
+  const e = {code, results: found, top: found[0] || null, related, value: undefined, stats: null,
+    error: res.every(x => x.status === 'rejected') ? (res[0].reason && res[0].reason.message) : ''};
+  e.status = related.some(inShelf) ? 'own' : related.some(r => r.wish) ? 'wish' : related.some(r => r.sold) ? 'sold' : 'new';
+  storeLog.unshift(e); if (storeLog.length > 30) storeLog.pop();
+  showStoreCard(e);
+  try { $('#storeOut').scrollIntoView({block: 'nearest', behavior: 'smooth'}); } catch (err) {}
+  const log = $('#storeLog'); if (log) log.innerHTML = storeLogHTML();
+  if (!(e.top && e.top.source === 'discogs' && settings.discogsToken)) return;
+  try {
+    e.value = await marketValueOf(e.top.sourceId, 'VG+');
+    if (e.value && e.value.kind === 'suggestion') e.stats = await dgGet(`marketplace/stats/${e.top.sourceId}`, {curr_abbr: 'EUR'});
+    else if (e.value) e.stats = {lowest_price: {value: e.value.value, currency: e.value.currency}, num_for_sale: e.value.forSale};
+  } catch (err) { if (e.value === undefined) e.value = null; }
+  dgPrices.set(e.top.sourceId, e.value || null);
+  if (storeLog[0] === e) showStoreCard(e);
+  const log2 = $('#storeLog'); if (log2) log2.innerHTML = storeLogHTML();
+}
+function showStoreCard(e) {
+  const out = $('#storeOut');
+  if (!out || !e) return;
+  const t = e.top, own = e.related.filter(inShelf), wish = e.related.filter(r => r.wish), sold = e.related.filter(r => r.sold);
+  const status = [
+    ...own.map(r => `<p class="store-status own">● ${exactMatch(r, e) ? 'Hast du schon' : 'Das Album hast du schon, eventuell andere Pressung'}: Nr. ${esc(r.inv)}${r.shelf ? ', Fach ' + esc(r.shelf) : ''}</p>`),
+    ...wish.map(r => `<p class="store-status wish">★ Steht auf deiner Wunschliste${hasPrice(r.maxPrice) ? `, max. ${esc(priceText(r.maxPrice))}` : ''}</p>`),
+    ...sold.map(r => `<p class="store-status">Hattest du schon, verkauft${r.soldOn ? ' am ' + esc(dateText(r.soldOn)) : ''}</p>`)
+  ];
+  if (!status.length && t) status.push('<p class="store-status new">Neu für deine Sammlung</p>');
+  let price = '';
+  if (t && t.source === 'discogs' && settings.discogsToken) {
+    const v = e.value, low = e.stats && e.stats.lowest_price, n = e.stats ? e.stats.num_for_sale || 0 : 0;
+    if (v === undefined) price = '<p class="hint small">Preis wird bei Discogs abgefragt …</p>';
+    else if (!v) price = '<p class="hint small">Bei Discogs gerade kein Preis verfügbar.</p>';
+    else {
+      price = `<div class="store-price">${v.kind === 'suggestion' ? `<div><span>Marktwert (VG+)</span><strong>ca. ${esc(money(v.value, v.currency))}</strong></div>` : ''}
+        <div><span>Günstigstes Angebot</span><strong>${low && low.value ? 'ab ' + esc(money(low.value, low.currency)) : '–'}</strong></div>
+        ${v.kind === 'suggestion' ? '' : `<div><span>Angebote bei Discogs</span><strong>${n}</strong></div>`}</div>
+        ${v.kind === 'suggestion' && n ? `<p class="hint small">${n} ${n === 1 ? 'Angebot' : 'Angebote'} bei Discogs</p>` : ''}`;
+      const max = wish.find(r => hasPrice(r.maxPrice));
+      if (max) price += `<p class="hint small">${v.value <= max.maxPrice ? 'Der Marktwert liegt unter deinem Maximalpreis.' : 'Der Marktwert liegt über deinem Maximalpreis.'}</p>`;
+    }
+  } else if (t && !settings.discogsToken) price = '<p class="hint small">Mit einem Discogs-Token (Einstellungen) siehst du hier auch den Marktwert.</p>';
+  out.innerHTML = t ? `<div class="store-card"><div class="top">${coverHTML(t)}<div><div class="a">${esc(t.artist)} – ${esc(t.title)}</div><div class="m">${esc([t.year, t.country, [t.label, t.catno].filter(Boolean).join(' '), t.format].filter(Boolean).join(', '))}</div>${e.results.length > 1 ? `<div class="m">${e.results.length} Pressungen zu diesem Barcode, gezeigt wird die erste</div>` : ''}</div></div>
+      ${status.join('')}${price}
+      <div class="alt-actions"><button class="btn primary" data-s="add">Gekauft – ins Regal</button>${wish.length ? '' : '<button class="btn ghost" data-s="wish">Auf die Wunschliste</button>'}${e.results.length > 1 ? '<button class="btn ghost" data-s="all">Alle Pressungen</button>' : ''}</div></div>`
+    : `<div class="store-card"><p class="store-status">${e.error ? esc(e.error) : `Zu Barcode ${esc(e.code)} nichts gefunden.`}</p>${status.join('')}</div>`;
+  out.onclick = ev => {
+    const b = ev.target.closest('[data-s]'); if (!b) return;
+    if (b.dataset.s === 'all') { showResults([{status: 'fulfilled', value: e.results}], {barcode: e.code, existing: e.related, label: `Barcode ${e.code}`}); return; }
+    if (b.dataset.s === 'wish') { chooseResult(t, e.code, true); return; }
+    const w = wish[0]; // ein gekaufter Wunsch wird zur Platte im Regal
+    chooseResult(t, e.code, false, w ? {id: w.id, notes: w.notes, boughtOn: today(), addedAt: Date.now()} : {boughtOn: today()});
+  };
 }
 
 /* ---------- MusicBrainz ---------- */
@@ -802,17 +927,20 @@ async function searchSources(dg, mb) {
 }
 async function lookupBarcode(code) {
   const id = ++flow;
-  const existing = records.filter(r => r.barcode && r.barcode.replace(/^0+/, '') === code.replace(/^0+/, ''));
   openSheet(loadingHTML(`Suche nach Barcode ${code} …`));
   const res = await searchSources(() => dgSearch({barcode: code}), () => mbSearch(barcodeQuery(code)));
   if (id !== flow) return;
-  showResults(res, {barcode: code, existing, label: `Barcode ${code}`});
+  const found = res.flatMap(x => x.status === 'fulfilled' ? x.value : []);
+  showResults(res, {barcode: code, existing: relatedRecords(code, found), label: `Barcode ${code}`});
 }
 function openTextSearch() {
-  openSheet(`<h2 class="sheet-title">Platte suchen</h2>
+  openSheet(`<h2 class="sheet-title">${wishFlow ? 'Wunsch hinzufügen' : 'Platte suchen'}</h2>
     <p class="hint">Mindestens ein Feld ausfüllen. Die Katalognummer steht meist auf dem Plattenetikett oder dem Rücken der Hülle.</p>
-    <form id="tsForm" class="form">${field('artist', 'Künstler')}${field('title', 'Titel')}${field('catno', 'Katalognummer')}<button class="btn primary wide">Suchen</button></form>`,
-  body => { $('#tsForm', body).onsubmit = e => { e.preventDefault(); textLookup(Object.fromEntries(new FormData(e.target))); }; });
+    <form id="tsForm" class="form">${field('artist', 'Künstler')}${field('title', 'Titel')}${field('catno', 'Katalognummer')}<button class="btn primary wide">Suchen</button></form>
+    ${wishFlow ? '<div class="alt-actions"><button class="btn ghost" id="wishScan">Stattdessen Barcode scannen</button><button class="btn ghost" id="wishManual">Von Hand eintragen</button></div>' : ''}`,
+  body => {
+    if (wishFlow) { $('#wishScan', body).onclick = openScanner; $('#wishManual', body).onclick = () => openEdit({...emptyDraft(), wish: true}, true); }
+    $('#tsForm', body).onsubmit = e => { e.preventDefault(); textLookup(Object.fromEntries(new FormData(e.target))); }; });
 }
 async function textLookup(f) {
   const clean = v => String(v || '').trim().replace(/["\\]/g, '');
@@ -826,15 +954,16 @@ async function textLookup(f) {
   openSheet(loadingHTML('Suche …'));
   const res = await searchSources(() => dgSearch({artist: a, release_title: t, catno: c}), () => mbSearch(parts.join(' AND ')));
   if (id !== flow) return;
-  showResults(res, {barcode: '', existing: [], label: [a, t, c].filter(Boolean).join(', ')});
+  const found = res.flatMap(x => x.status === 'fulfilled' ? x.value : []);
+  showResults(res, {barcode: '', existing: relatedRecords('', found), label: [a, t, c].filter(Boolean).join(', ')});
 }
 function showResults(settled, ctx) {
   const results = [], errors = [];
   settled.forEach(s => s.status === 'fulfilled' ? results.push(...s.value) : errors.push(s.reason?.message || 'Unbekannter Fehler'));
   results.sort((a, b) => isVinyl(b) - isVinyl(a));
-  const ex = ctx.existing.map(r => `<div class="warn">${r.sold ? `Hattest du schon, verkauft${r.soldOn ? ' am ' + esc(dateText(r.soldOn)) : ''}:` : 'Schon im Regal:'} <strong>${esc(r.artist)} – ${esc(r.title)}</strong> (Nr. ${esc(r.inv)}${r.shelf ? ', Fach ' + esc(r.shelf) : ''})<br><button class="btn ghost" data-show="${esc(r.id)}">Ansehen</button></div>`).join('');
+  const ex = ctx.existing.map(r => `<div class="warn${r.wish ? ' wishhit' : ''}">${r.wish ? `★ Steht auf deiner Wunschliste${hasPrice(r.maxPrice) ? ` (max. ${esc(priceText(r.maxPrice))})` : ''}:` : r.sold ? `Hattest du schon, verkauft${r.soldOn ? ' am ' + esc(dateText(r.soldOn)) : ''}:` : 'Schon im Regal:'} <strong>${esc(r.artist)} – ${esc(r.title)}</strong> ${r.wish ? '' : `(Nr. ${esc(r.inv)}${r.shelf ? ', Fach ' + esc(r.shelf) : ''})`}<br><button class="btn ghost" data-show="${esc(r.id)}">Ansehen</button></div>`).join('');
   const list = results.map((r, i) => `<button class="result" data-i="${i}">${coverHTML(r)}<span><span class="a">${esc(r.artist)} – ${esc(r.title)}</span><br><span class="m">${esc([r.year, r.country, [r.label, r.catno].filter(Boolean).join(' '), r.format].filter(Boolean).join(', '))}</span><br>${isVinyl(r) ? '<span class="badge vinyl">Vinyl</span> ' : ''}${r.source === 'discogs' ? (settings.discogsToken && i < PRICE_RESULTS ? `<span class="badge price" data-price="${esc(r.sourceId)}">${priceBadge(r.sourceId)}</span>` : '') : '<span class="badge">MusicBrainz</span>'}</span></button>`).join('');
-  openSheet(`<h2 class="sheet-title">${results.length ? 'Welche Pressung?' : 'Nichts gefunden'}</h2>
+  openSheet(`<h2 class="sheet-title">${results.length ? (wishFlow ? 'Welche Platte suchst du?' : 'Welche Pressung?') : 'Nichts gefunden'}</h2>
     <p class="hint">${esc(ctx.label)}${results.length ? `, ${results.length} Treffer` : ''}</p>
     ${ex}
     ${errors.map(e => `<div class="warn">${esc(e)}</div>`).join('')}
@@ -846,10 +975,10 @@ function showResults(settled, ctx) {
     body.querySelectorAll('[data-show]').forEach(b => b.onclick = () => openDetail(b.dataset.show));
     $('#again', body).onclick = openScanner;
     $('#toText', body).onclick = openTextSearch;
-    $('#toManual', body).onclick = () => openEdit({...emptyDraft(), barcode: ctx.barcode}, true);
+    $('#toManual', body).onclick = () => openEdit({...emptyDraft(), barcode: ctx.barcode, wish: wishFlow}, true);
   });
 }
-async function chooseResult(r, barcode) {
+async function chooseResult(r, barcode, wish, extra = {}) {
   let d = r;
   if (r.source === 'musicbrainz') {
     const id = ++flow;
@@ -857,7 +986,7 @@ async function chooseResult(r, barcode) {
     try { d = await mbDetails(r); } catch (e) { d = r; }
     if (id !== flow) return;
   }
-  openEdit(draftFrom(d, barcode), true);
+  openEdit({...draftFrom(d, barcode), wish: wish || wishFlow, ...extra}, true);
 }
 const emptyDraft = () => ({id: null, artist: '', artistSort: '', title: '', year: '', origYear: '', genre: '', styles: [], label: '', catno: '', country: '', format: 'Vinyl, LP', barcode: '', cover: '', coverFallback: '', source: 'manual', sourceId: '', shelf: '', tags: [], condition: '', rating: 0, notes: '', price: '', boughtAt: '', boughtOn: ''});
 function draftFrom(r, barcode) {
@@ -874,7 +1003,8 @@ const uniq = arr => [...new Set(arr.filter(Boolean))].sort(coll.compare);
 const datalist = (id, arr) => `<datalist id="${id}">${arr.map(v => `<option value="${esc(v)}">`).join('')}</datalist>`;
 function openEdit(d, isNew) {
   const inv = d.inv || nextInv();
-  openSheet(`<h2 class="sheet-title">${isNew ? 'Platte hinzufügen' : 'Platte bearbeiten'}</h2>
+  const wish = !!d.wish;
+  openSheet(`<h2 class="sheet-title">${wish ? (isNew ? 'Auf die Wunschliste' : 'Wunsch bearbeiten') : isNew ? 'Platte hinzufügen' : 'Platte bearbeiten'}</h2>
     <div class="edit-head">${coverHTML(d)}<div><div class="a">${esc(d.artist || 'Neue Platte')}</div><div>${esc(d.title)}</div>${d.source && d.source !== 'manual' ? `<div class="m">Daten von ${d.source === 'discogs' ? 'Discogs' : 'MusicBrainz'}. Bitte kurz prüfen.</div>` : ''}${settings.discogsToken && (d.discogsId || d.market) ? `<div class="mval" id="mval">${d.market && d.market.value ? marketLine(d.market) : 'Marktwert wird geladen …'}</div>` : ''}</div></div>
     <form id="editForm" class="form">
       <fieldset><legend>Platte</legend>
@@ -888,7 +1018,10 @@ function openEdit(d, isNew) {
         <div class="two">${field('country', 'Land', d.country)}${field('format', 'Format', d.format)}</div>
         ${field('barcode', 'Barcode', d.barcode, 'inputmode="numeric"')}
       </fieldset>
-      <fieldset><legend>In meinem Regal</legend>
+      ${wish ? `<fieldset><legend>Wunsch</legend>
+        ${field('maxPrice', 'Maximalpreis in € (freiwillig)', priceInput(d.maxPrice), PRICE_ATTRS)}
+        <label class="field"><span>Notizen</span><textarea name="notes" rows="3" placeholder="z. B. nur Erstpressung, gern mit Poster">${esc(d.notes)}</textarea></label>
+      </fieldset>` : `<fieldset><legend>In meinem Regal</legend>
         <div class="two">${field('inv', 'Inventarnummer', inv, 'inputmode="numeric" required')}${field('shelf', 'Regalfach', d.shelf, 'list="dl-shelves" placeholder="z. B. A3"')}</div>
         ${field('tags', 'Eigene Kategorien, mit Komma getrennt', (d.tags || []).join(', '), 'placeholder="z. B. Sonntagmorgen, Erbstück"')}
         <label class="field"><span>Zustand</span><select name="condition">${CONDITIONS.map(([v, l]) => `<option value="${v}"${v === (d.condition || '') ? ' selected' : ''}>${l}</option>`).join('')}</select></label>
@@ -898,17 +1031,20 @@ function openEdit(d, isNew) {
       <fieldset><legend>Kauf (freiwillig)</legend>
         <div class="two">${field('price', 'Einkaufspreis in €', priceInput(d.price), PRICE_ATTRS)}${field('boughtOn', 'Einkaufsdatum', d.boughtOn, 'type="date"')}</div>
         ${field('boughtAt', 'Einkaufsort', d.boughtAt, 'list="dl-places" placeholder="z. B. Flohmarkt, Plattenladen, Discogs"')}
-      </fieldset>
+      </fieldset>`}
       ${d.sold ? `<fieldset><legend>Verkauf</legend>
         <div class="two">${field('soldPrice', 'Verkaufspreis in €', priceInput(d.soldPrice), PRICE_ATTRS)}${field('soldOn', 'Verkaufsdatum', d.soldOn, 'type="date"')}</div>
         ${field('soldTo', 'Verkauft an / über', d.soldTo, 'list="dl-buyers" placeholder="z. B. Discogs, eBay, Freund"')}
       </fieldset>${datalist('dl-buyers', uniq(records.map(r => r.soldTo)))}` : ''}
       ${datalist('dl-shelves', uniq(records.map(r => r.shelf)))}${datalist('dl-genres', uniq(records.map(r => r.genre)))}${datalist('dl-places', uniq(records.map(r => r.boughtAt)))}
-      <button class="btn primary wide" type="submit">Speichern</button>
+      <button class="btn primary wide" type="submit">${wish && isNew ? 'Auf die Wunschliste setzen' : 'Speichern'}</button>
+      ${isNew && !wish ? '<button class="btn ghost wide" type="button" id="toWish" style="margin-top:8px">Stattdessen auf die Wunschliste</button>' : ''}
     </form>`,
   body => {
     const stars = $('.stars', body);
-    stars.addEventListener('change', e => { stars.dataset.r = e.target.value; });
+    if (stars) stars.addEventListener('change', e => { stars.dataset.r = e.target.value; });
+    const toWish = $('#toWish', body);
+    if (toWish) toWish.onclick = () => openEdit({...d, wish: true}, true);
     $('#editForm', body).onsubmit = e => { e.preventDefault(); saveRecord(d, new FormData(e.target), isNew); };
     if (settings.discogsToken && d.discogsId && !(d.market && d.market.value)) {
       const f = flow;
@@ -922,21 +1058,25 @@ function openEdit(d, isNew) {
 async function saveRecord(d, fd, isNew) {
   const g = k => String(fd.get(k) || '').trim();
   const list = k => g(k).split(',').map(s => s.trim()).filter(Boolean);
-  const inv = parseInt(g('inv')) || nextInv();
-  const dup = records.find(r => r.inv === inv && r.id !== d.id);
+  const wish = !!d.wish;
+  const inv = wish ? 0 : parseInt(g('inv')) || nextInv();
+  const dup = !wish && records.find(r => r.inv === inv && r.id !== d.id);
   if (dup && !confirm(`Die Inventarnummer ${inv} hat schon „${dup.artist} – ${dup.title}“. Trotzdem speichern?`)) return;
   const rec = {...d, id: d.id || newId(), inv, artist: g('artist'), artistSort: g('artistSort') || defaultSort(g('artist')), title: g('title'),
     year: g('year'), origYear: g('origYear'), genre: g('genre'), styles: list('styles'), label: g('label'), catno: g('catno'),
     country: g('country'), format: g('format'), barcode: g('barcode').replace(/\D/g, ''), shelf: g('shelf'), tags: list('tags'),
     condition: g('condition'), rating: parseInt(g('rating')) || 0, notes: g('notes'), price: parsePrice(g('price')), boughtAt: g('boughtAt'), boughtOn: g('boughtOn'), addedAt: d.addedAt || Date.now(), updatedAt: Date.now()};
   if (d.sold) Object.assign(rec, {soldPrice: parsePrice(g('soldPrice')), soldOn: g('soldOn'), soldTo: g('soldTo')});
+  if (wish) Object.assign(rec, {maxPrice: parsePrice(g('maxPrice'))});
+  else delete rec.maxPrice;
   try { await dbPut(rec); } catch (e) { toast('Speichern fehlgeschlagen: ' + e.message); return; }
   const i = records.findIndex(r => r.id === rec.id);
   if (i >= 0) records[i] = rec; else records.push(rec);
   requestPersist(); localChanged();
   render();
   if (settings.discogsToken && rec.discogsId && !rec.sold && (!rec.market || rec.market.cond !== (rec.condition || 'VG+'))) refreshMarket(rec.id);
-  if (isNew) { closeSheet(); toast(`Gespeichert als Nr. ${inv}: ${rec.artist} – ${rec.title}`, {label: 'Nächste scannen', fn: openScanner}); }
+  if (isNew && wish) { closeSheet(); toast(`Auf der Wunschliste: ${rec.artist} – ${rec.title}`); }
+  else if (isNew) { closeSheet(); toast(`Gespeichert als Nr. ${inv}: ${rec.artist} – ${rec.title}`, {label: 'Nächste scannen', fn: openScanner}); }
   else { openDetail(rec.id); toast('Änderungen gespeichert'); }
 }
 
@@ -947,25 +1087,26 @@ function openDetail(id) {
   const yearText = r.year && r.origYear && r.origYear !== r.year ? `${r.year} (erstmals ${r.origYear})` : (r.year || r.origYear);
   const meta = [['Jahr', yearText], ['Genre', [r.genre, ...(r.styles || [])].filter(Boolean).join(', ')], ['Label', [r.label, r.catno].filter(Boolean).join(', ')],
     ['Land', r.country], ['Format', r.format], ['Barcode', r.barcode], ['Zustand', r.condition ? (CONDITIONS.find(c => c[0] === r.condition) || [, r.condition])[1] : ''],
-    ['Kategorien', (r.tags || []).join(', ')], ['Einsortiert unter', r.artistSort],
+    ['Kategorien', (r.tags || []).join(', ')], ['Einsortiert unter', r.wish ? '' : r.artistSort],
     ['Einkaufspreis', priceText(r.price)], ['Einkaufsort', r.boughtAt], ['Einkaufsdatum', dateText(r.boughtOn)],
-    ['Marktwert (Discogs)', r.market && r.market.value ? `ca. ${money(r.market.value, r.market.currency)}${r.market.kind === 'lowest' ? ' (günstigstes Angebot)' : ''}` : ''],
+    ['Marktwert (Discogs)', !r.wish && r.market && r.market.value ? `ca. ${money(r.market.value, r.market.currency)}${r.market.kind === 'lowest' ? ' (günstigstes Angebot)' : ''}` : ''],
     ...(r.sold ? [['Verkaufspreis', priceText(r.soldPrice)], ['Verkaufsdatum', dateText(r.soldOn)], ['Verkauft an', r.soldTo], ['Gewinn', profitText(r)]] : [])].filter(([, v]) => v);
   const dgId = r.source === 'discogs' ? r.sourceId : r.discogsId;
   const linkSrc = dgId ? 'Discogs' : r.source === 'musicbrainz' ? 'MusicBrainz' : '';
   const link = dgId ? `https://www.discogs.com/release/${encodeURIComponent(dgId)}` : r.source === 'musicbrainz' ? `https://musicbrainz.org/release/${encodeURIComponent(r.sourceId)}` : '';
-  openSheet(`<div class="d-hero" style="--h:${hue(r.artist)}${r.cover ? `;--hero:url('${esc(r.cover.replace(/['\\()]/g, c => '%' + c.charCodeAt(0).toString(16)))}')` : ''}"><div class="detail-cover${r.sold ? ' sold' : ''}">${coverHTML(r)}${r.sold ? '<span class="stamp">Verkauft</span>' : ''}<span class="lp" style="--h:${hue(r.artist)}"><i></i></span><span class="sticker"><small>Nr.</small><b>${esc(r.inv)}</b></span></div></div>
+  openSheet(`<div class="d-hero" style="--h:${hue(r.artist)}${r.cover ? `;--hero:url('${esc(r.cover.replace(/['\\()]/g, c => '%' + c.charCodeAt(0).toString(16)))}')` : ''}"><div class="detail-cover${r.sold ? ' sold' : ''}">${coverHTML(r)}${r.sold ? '<span class="stamp">Verkauft</span>' : ''}<span class="lp" style="--h:${hue(r.artist)}"><i></i></span>${r.wish ? '<span class="sticker"><small>Wunsch</small><b>★</b></span>' : `<span class="sticker"><small>Nr.</small><b>${esc(r.inv)}</b></span>`}</div></div>
     <h2 class="d-artist">${esc(r.artist)}</h2><p class="d-title">${esc(r.title)}</p>
-    <div class="d-place"><div><span>Regalfach</span><strong>${esc(r.shelf || '–')}</strong></div>${r.rating ? `<div><span>Bewertung</span><strong class="stars-ro" aria-label="${r.rating} von 5 Sternen">${'★'.repeat(r.rating)}</strong></div>` : ''}</div>
+    ${r.wish ? `<div class="d-place"><div><span>Maximalpreis</span><strong>${hasPrice(r.maxPrice) ? esc(priceText(r.maxPrice)) : '–'}</strong></div><div><span>Marktwert (Discogs)</span><strong>${r.market && r.market.value ? 'ca. ' + esc(money(r.market.value, r.market.currency)) : '–'}</strong></div></div>` : `<div class="d-place"><div><span>Regalfach</span><strong>${esc(r.shelf || '–')}</strong></div>${r.rating ? `<div><span>Bewertung</span><strong class="stars-ro" aria-label="${r.rating} von 5 Sternen">${'★'.repeat(r.rating)}</strong></div>` : ''}</div>`}
     <dl class="meta">${meta.map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join('')}</dl>
     ${r.notes ? `<p class="notes">${esc(r.notes)}</p>` : ''}
-    <div class="actions"><button class="btn primary" id="editBtn">Bearbeiten</button>${r.sold ? '<button class="btn ghost" id="unsellBtn">Zurück ins Regal</button>' : '<button class="btn ghost" id="sellBtn">Verkauft …</button>'}${link ? `<a class="btn ghost" href="${link}" target="_blank" rel="noopener">Bei ${linkSrc} ansehen</a>` : ''}<button class="btn danger" id="delBtn">Löschen</button></div>`,
+    <div class="actions">${r.wish ? '<button class="btn primary" id="gotBtn">Gekauft – ins Regal</button><button class="btn ghost" id="editBtn">Bearbeiten</button>' : `<button class="btn primary" id="editBtn">Bearbeiten</button>${r.sold ? '<button class="btn ghost" id="unsellBtn">Zurück ins Regal</button>' : '<button class="btn ghost" id="sellBtn">Verkauft …</button>'}`}${link ? `<a class="btn ghost" href="${link}" target="_blank" rel="noopener">Bei ${linkSrc} ansehen</a>` : ''}<button class="btn danger" id="delBtn">Löschen</button></div>`,
   body => {
     $('#editBtn', body).onclick = () => openEdit(r, false);
-    if (r.sold) $('#unsellBtn', body).onclick = () => unsell(r);
+    if (r.wish) $('#gotBtn', body).onclick = () => openEdit({...r, wish: false, maxPrice: undefined, inv: 0, boughtOn: today(), addedAt: Date.now()}, true);
+    else if (r.sold) $('#unsellBtn', body).onclick = () => unsell(r);
     else $('#sellBtn', body).onclick = () => openSell(r);
     $('#delBtn', body).onclick = async () => {
-      if (!confirm(`„${r.artist} – ${r.title}“ aus dem Regal löschen?`)) return;
+      if (!confirm(`„${r.artist} – ${r.title}“ ${r.wish ? 'von der Wunschliste' : 'aus dem Regal'} löschen?`)) return;
       try { await dbDel(r.id); } catch (e) { toast('Löschen fehlgeschlagen: ' + e.message); return; }
       records = records.filter(x => x.id !== r.id);
       deleted[r.id] = Date.now(); saveDeleted(); localChanged();
@@ -1036,7 +1177,7 @@ function barsHTML(title, entries, fmt = v => String(v), note = '', cls = '') {
   return `<section class="chart"><h3>${esc(title)}</h3><div class="bars ${cls}">${entries.map(([k, v]) => `<span class="l" title="${esc(k)}">${esc(k)}</span><span class="track" title="${esc(k)}: ${esc(fmt(v))}"><span class="fill" style="width:${max ? Math.max(1, v / max * 100) : 0}%"></span></span><span class="v">${esc(fmt(v))}</span>`).join('')}</div>${note ? `<p class="hint small">${note}</p>` : ''}</section>`;
 }
 function openStats() {
-  const shelf = records.filter(r => !r.sold), sold = records.filter(r => r.sold);
+  const shelf = records.filter(inShelf), sold = records.filter(r => r.sold);
   if (!records.length) { openSheet(`<h2 class="sheet-title">Statistik</h2><p class="hint">Sobald Platten im Regal stehen, gibt es hier Zahlen zur Sammlung.</p>`); return; }
   const priced = shelf.filter(r => hasPrice(r.price));
   const value = sumOf(priced, 'price');
@@ -1158,7 +1299,7 @@ async function refreshMarket(id) {
 }
 async function fetchMarketValues(all) {
   if (market.running || !settings.discogsToken) return;
-  const list = records.filter(r => !r.sold && (all || !r.market));
+  const list = records.filter(r => !r.sold && (all || !r.market)); // Wünsche bekommen ebenfalls einen Wert
   Object.assign(market, {running: true, stop: false, done: 0, total: list.length, errors: 0, msg: '', noSuggest: false});
   updateMarketUI();
   try {
@@ -1178,9 +1319,9 @@ async function fetchMarketValues(all) {
 }
 function marketHTML() {
   if (!settings.discogsToken) return `<p class="hint small">Mit einem kostenlosen Discogs-Token (Einstellungen) zeigt die App hier, was die Sammlung heute auf dem Discogs-Marktplatz wert ist.</p>`;
-  const shelf = records.filter(r => !r.sold);
+  const shelf = records.filter(inShelf);
   const valued = shelf.filter(r => r.market && r.market.value), none = shelf.filter(r => r.market && r.market.none).length;
-  const missing = shelf.filter(r => !r.market).length;
+  const missing = records.filter(r => !r.sold && !r.market).length;
   const byCur = {};
   valued.forEach(r => { byCur[r.market.currency] = (byCur[r.market.currency] || 0) + r.market.value; });
   const total = Object.entries(byCur).map(([c, v]) => money(v, c)).join(' + ');
@@ -1416,7 +1557,7 @@ async function exportCsv() {
   const cols = [['Inventarnummer', 'inv'], ['Künstler', 'artist'], ['Einsortiert unter', 'artistSort'], ['Titel', 'title'], ['Jahr', 'year'], ['Erstveröffentlichung', 'origYear'],
     ['Genre', 'genre'], ['Stile', r => (r.styles || []).join(', ')], ['Label', 'label'], ['Katalognummer', 'catno'], ['Land', 'country'], ['Format', 'format'],
     ['Barcode', r => r.barcode ? `="${r.barcode}"` : ''], ['Regalfach', 'shelf'], ['Kategorien', r => (r.tags || []).join(', ')], ['Zustand', 'condition'],
-    ['Bewertung', 'rating'], ['Notizen', 'notes'], ['Einkaufspreis', r => priceInput(r.price)], ['Einkaufsort', 'boughtAt'], ['Einkaufsdatum', r => dateText(r.boughtOn)], ['Verkauft', r => r.sold ? 'ja' : ''], ['Verkaufspreis', r => priceInput(r.soldPrice)], ['Verkaufsdatum', r => dateText(r.soldOn)], ['Verkauft an', 'soldTo'], ['Marktwert (Discogs)', r => r.market && r.market.value ? priceInput(r.market.value) + (r.market.currency && r.market.currency !== 'EUR' ? ' ' + r.market.currency : '') : ''], ['Hinzugefügt', r => r.addedAt ? new Date(r.addedAt).toLocaleDateString('de-DE') : ''], ['Quelle', 'source'], ['Quell-ID', 'sourceId']];
+    ['Bewertung', 'rating'], ['Notizen', 'notes'], ['Einkaufspreis', r => priceInput(r.price)], ['Einkaufsort', 'boughtAt'], ['Einkaufsdatum', r => dateText(r.boughtOn)], ['Status', r => r.sold ? 'verkauft' : r.wish ? 'Wunschliste' : 'im Regal'], ['Maximalpreis', r => priceInput(r.maxPrice)], ['Verkaufspreis', r => priceInput(r.soldPrice)], ['Verkaufsdatum', r => dateText(r.soldOn)], ['Verkauft an', 'soldTo'], ['Marktwert (Discogs)', r => r.market && r.market.value ? priceInput(r.market.value) + (r.market.currency && r.market.currency !== 'EUR' ? ' ' + r.market.currency : '') : ''], ['Hinzugefügt', r => r.addedAt ? new Date(r.addedAt).toLocaleDateString('de-DE') : ''], ['Quelle', 'source'], ['Quell-ID', 'sourceId']];
   const cell = v => '"' + String(v ?? '').replace(/"/g, '""') + '"';
   const rows = records.slice().sort(cmpRecords('inv')).map(r => cols.map(([, k]) => cell(typeof k === 'function' ? k(r) : r[k])).join(';'));
   const csv = '\uFEFF' + [cols.map(c => cell(c[0])).join(';'), ...rows].join('\r\n');
@@ -1494,7 +1635,7 @@ function initControls() {
   $('#viewBtn').onclick = () => { settings.view = settings.view === 'grid' ? 'rows' : 'grid'; saveSettings(); updateViewBtn(); render(); };
   updateViewBtn();
   $('#search').addEventListener('input', render);
-  $('#scanBtn').onclick = openScanner;
+  $('#scanBtn').onclick = () => { wishFlow = false; openScanner(); };
   $('#settingsBtn').onclick = openSettings;
   $('#statsBtn').onclick = openStats;
   $('#syncBtn').onclick = () => driveSync({interactive: true});
@@ -1504,6 +1645,7 @@ function initControls() {
   $('#list').addEventListener('click', e => {
     if (e.target.closest('[data-action="backup"]')) { exportJson(); return; }
     const tab = e.target.closest('[data-tab]'); if (tab) { settings.tab = tab.dataset.tab; saveSettings(); render(); return; }
+    if (e.target.closest('[data-action="addwish"]')) { wishFlow = true; openTextSearch(); return; }
     const b = e.target.closest('[data-id]'); if (b) openDetail(b.dataset.id);
   });
   $('#sheet').addEventListener('click', e => { if (e.target.closest('[data-close]')) closeSheet(); });
