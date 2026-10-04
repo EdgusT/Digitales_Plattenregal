@@ -226,6 +226,12 @@ textarea{resize:vertical}
 .set h3{margin:0 0 4px;font-weight:800;font-stretch:80%;font-size:1.2rem}
 .file{position:relative;overflow:hidden}
 .photo-btn{margin:4px 0 2px}
+.sync{
+  margin-left:8px;border:1px solid var(--line);background:var(--surface);color:var(--muted);border-radius:999px;
+  padding:1px 10px 1px 8px;font-size:.8rem;font-stretch:90%;display:inline-flex;gap:5px;align-items:center;vertical-align:1px
+}
+.sync svg{width:15px;height:15px}
+.sync.alert{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:700}
 </style>
 </head>
 <body>
@@ -236,7 +242,7 @@ textarea{resize:vertical}
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
     </button>
   </div>
-  <p class="count" id="count"></p>
+  <p class="count"><span id="count"></span><button class="sync" id="syncBtn" hidden></button></p>
   <input id="search" type="search" placeholder="Suchen: Künstler, Titel, Label, Regalfach …" autocomplete="off" aria-label="Sammlung durchsuchen">
   <div class="controls">
     <label>Ordnen nach<select id="groupSel"></select></label>
@@ -278,7 +284,8 @@ const SORTS = {artist: 'Künstler', title: 'Titel', year: 'Jahr', added: 'Neuest
 const CONDITIONS = [['', 'nicht angegeben'], ['M', 'M – neuwertig, ungespielt'], ['NM', 'NM – fast neuwertig'], ['VG+', 'VG+ – sehr gut, leichte Spuren'], ['VG', 'VG – gut, hörbare Gebrauchsspuren'], ['G+', 'G+ – deutlich gebraucht'], ['G', 'G – stark gebraucht'], ['P', 'P – schlecht']];
 
 /* ---------- Einstellungen (nur auf diesem Gerät) ---------- */
-const settings = {group: 'letter', sort: 'artist', view: 'grid', discogsToken: '', lastBackup: 0};
+const settings = {group: 'letter', sort: 'artist', view: 'grid', discogsToken: '', lastBackup: 0,
+  driveOn: false, driveFolderId: '', driveFileId: '', lastSync: 0, driveDirty: false};
 try { Object.assign(settings, JSON.parse(localStorage.getItem('plattenregal-settings') || '{}')); } catch (e) {}
 function saveSettings() { try { localStorage.setItem('plattenregal-settings', JSON.stringify(settings)); } catch (e) {} }
 
@@ -307,6 +314,12 @@ const dbAll = () => dbRun('readonly', s => s.getAll());
 const dbPut = r => dbRun('readwrite', s => s.put(r));
 const dbDel = id => dbRun('readwrite', s => s.delete(id));
 const dbPutMany = list => dbRun('readwrite', s => { list.forEach(r => s.put(r)); return null; });
+const dbApply = (puts, dels) => dbRun('readwrite', s => { puts.forEach(r => s.put(r)); dels.forEach(id => s.delete(id)); return null; });
+
+// Gelöschte Platten (id -> Zeitpunkt), damit der Drive-Abgleich sie nicht von einem anderen Gerät zurückholt
+let deleted = {};
+try { deleted = JSON.parse(localStorage.getItem('plattenregal-deleted') || '{}') || {}; } catch (e) {}
+function saveDeleted() { try { localStorage.setItem('plattenregal-deleted', JSON.stringify(deleted)); } catch (e) {} }
 
 let records = [];
 let persistAsked = false;
@@ -383,7 +396,7 @@ function render() {
   }
   const items = records.filter(r => matches(r, q)).sort(cmpRecords(settings.sort));
   let html = '';
-  const stale = Date.now() - (settings.lastBackup || 0) > 30 * 864e5;
+  const stale = Date.now() - Math.max(settings.lastBackup || 0, settings.driveOn ? settings.lastSync || 0 : 0) > 30 * 864e5;
   if (n >= 5 && stale && !q) html += `<div class="notice"><span>${settings.lastBackup ? 'Die letzte Sicherung ist über 30 Tage her.' : 'Noch keine Sicherung erstellt.'}</span><button class="btn ghost" data-action="backup">Jetzt sichern</button></div>`;
   if (!items.length) { list.innerHTML = html + `<p class="empty">Keine Platte passt zu „${esc(q)}“.</p>`; return; }
   const groups = new Map();
@@ -760,7 +773,7 @@ async function saveRecord(d, fd, isNew) {
   try { await dbPut(rec); } catch (e) { toast('Speichern fehlgeschlagen: ' + e.message); return; }
   const i = records.findIndex(r => r.id === rec.id);
   if (i >= 0) records[i] = rec; else records.push(rec);
-  requestPersist();
+  requestPersist(); localChanged();
   render();
   if (isNew) { closeSheet(); toast(`Gespeichert als Nr. ${inv}: ${rec.artist} – ${rec.title}`, {label: 'Nächste scannen', fn: openScanner}); }
   else { openDetail(rec.id); toast('Änderungen gespeichert'); }
@@ -788,9 +801,194 @@ function openDetail(id) {
       if (!confirm(`„${r.artist} – ${r.title}“ aus dem Regal löschen?`)) return;
       try { await dbDel(r.id); } catch (e) { toast('Löschen fehlgeschlagen: ' + e.message); return; }
       records = records.filter(x => x.id !== r.id);
+      deleted[r.id] = Date.now(); saveDeleted(); localChanged();
       render(); closeSheet(); toast('Gelöscht');
     };
   });
+}
+
+/* ---------- Google Drive (optional) ---------- */
+// Client-ID aus der Google Cloud Console eintragen (Anleitung: DRIVE-EINRICHTUNG.md).
+// Solange sie leer ist, blendet die App den Drive-Abgleich aus.
+const GOOGLE_CLIENT_ID = '';
+const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file'; // nur Dateien, die die App selbst angelegt hat
+const DRIVE_FOLDER = 'Plattenregal', DRIVE_FILE = 'plattenregal.json';
+const DAPI = 'https://www.googleapis.com/drive/v3/files', DUPLOAD = 'https://www.googleapis.com/upload/drive/v3/files';
+const drive = {token: '', exp: 0, state: '', msg: '', busy: null, again: false, timer: 0};
+try { Object.assign(drive, JSON.parse(localStorage.getItem('plattenregal-drive-token') || '{}')); } catch (e) {}
+const hasToken = () => drive.token && Date.now() < drive.exp - 60000;
+function setToken(token, sec) {
+  drive.token = token; drive.exp = token ? Date.now() + sec * 1000 : 0;
+  try { localStorage.setItem('plattenregal-drive-token', JSON.stringify({token: drive.token, exp: drive.exp})); } catch (e) {}
+}
+
+let gisPromise = null;
+function loadGis() {
+  if (!gisPromise) gisPromise = new Promise((res, rej) => {
+    const s = document.createElement('script');
+    s.src = 'https://accounts.google.com/gsi/client'; s.async = true;
+    s.onload = res;
+    s.onerror = () => { gisPromise = null; s.remove(); rej(new Error('Die Google-Anmeldung konnte nicht geladen werden. Besteht eine Internetverbindung?')); };
+    document.head.append(s);
+  });
+  return gisPromise;
+}
+// Öffnet das Google-Anmeldefenster. Muss direkt aus einem Tippen heraus aufgerufen werden, sonst blockiert der Browser das Fenster.
+function driveSignIn() {
+  return new Promise((res, rej) => {
+    const oauth = window.google?.accounts?.oauth2;
+    if (!oauth) { loadGis().catch(() => {}); rej(new Error('Die Google-Anmeldung lädt noch. Bitte gleich nochmal tippen.')); return; }
+    oauth.initTokenClient({
+      client_id: GOOGLE_CLIENT_ID, scope: DRIVE_SCOPE,
+      callback: r => {
+        if (r.error) { rej(new Error('Anmeldung bei Google fehlgeschlagen.')); return; }
+        if (!oauth.hasGrantedAllScopes(r, DRIVE_SCOPE)) { rej(new Error('Ohne Zugriff auf Google Drive kann die App nicht abgleichen.')); return; }
+        setToken(r.access_token, Number(r.expires_in) || 3600); res();
+      },
+      error_callback: e => rej(new Error(e.type === 'popup_failed_to_open' ? 'Das Anmeldefenster wurde blockiert. Bitte Pop-ups für diese Seite erlauben.' : 'Anmeldung abgebrochen.'))
+    }).requestAccessToken(settings.driveOn ? {prompt: ''} : {});
+  });
+}
+
+async function gfetch(url, opts = {}) {
+  const r = await fetch(url, {...opts, headers: {...opts.headers, Authorization: 'Bearer ' + drive.token}});
+  if (r.status === 401) { setToken('', 0); throw Object.assign(new Error('Die Anmeldung bei Google ist abgelaufen.'), {auth: true}); }
+  if (r.status === 404) throw Object.assign(new Error('Datei in Google Drive nicht gefunden.'), {notFound: true});
+  if (!r.ok) throw new Error(`Google Drive antwortet nicht (Fehler ${r.status}).`);
+  return r;
+}
+async function driveFind(q) {
+  const r = await gfetch(`${DAPI}?spaces=drive&pageSize=10&orderBy=modifiedTime desc&fields=files(id)&q=${encodeURIComponent(q + ' and trashed=false')}`);
+  return (await r.json()).files?.[0]?.id || '';
+}
+async function driveAlive(id) {
+  try { return !(await (await gfetch(`${DAPI}/${id}?fields=trashed`)).json()).trashed; }
+  catch (e) { if (e.notFound) return false; throw e; }
+}
+async function driveFolder() {
+  if (settings.driveFolderId && await driveAlive(settings.driveFolderId)) return settings.driveFolderId;
+  let id = await driveFind(`name='${DRIVE_FOLDER}' and mimeType='application/vnd.google-apps.folder'`);
+  if (!id) {
+    const r = await gfetch(`${DAPI}?fields=id`, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({name: DRIVE_FOLDER, mimeType: 'application/vnd.google-apps.folder'})});
+    id = (await r.json()).id;
+  }
+  settings.driveFolderId = id; settings.driveFileId = ''; saveSettings();
+  return id;
+}
+async function driveFile(folder) {
+  if (settings.driveFileId && await driveAlive(settings.driveFileId)) return settings.driveFileId;
+  return driveFind(`name='${DRIVE_FILE}' and '${folder}' in parents`);
+}
+async function driveWrite(folder, id, data) {
+  const body = new Blob([JSON.stringify(data)], {type: 'application/json'});
+  if (id) { await gfetch(`${DUPLOAD}/${id}?uploadType=media`, {method: 'PATCH', headers: {'Content-Type': 'application/json'}, body}); return id; }
+  const fd = new FormData();
+  fd.append('metadata', new Blob([JSON.stringify({name: DRIVE_FILE, parents: [folder], mimeType: 'application/json'})], {type: 'application/json'}));
+  fd.append('file', body);
+  return (await (await gfetch(`${DUPLOAD}?uploadType=multipart&fields=id`, {method: 'POST', body: fd})).json()).id;
+}
+
+// Je Platte gewinnt die zuletzt geänderte Fassung; gelöschte Platten bleiben gelöscht, solange sie danach nicht neu gespeichert wurden.
+const stamp = r => r.updatedAt || r.addedAt || 0;
+function mergeData(localRecs, localDel, remote) {
+  const del = {...localDel};
+  for (const [id, t] of Object.entries(remote.deleted || {})) if (!(del[id] >= t)) del[id] = t;
+  const map = new Map();
+  for (const r of [...(remote.records || []), ...localRecs]) {
+    if (!r || !r.id) continue;
+    const old = map.get(r.id);
+    if (!old || stamp(r) >= stamp(old)) map.set(r.id, r);
+  }
+  return {recs: [...map.values()].filter(r => !(del[r.id] >= stamp(r))), del};
+}
+
+function setDriveState(state, msg = '') {
+  drive.state = state; drive.msg = msg;
+  const b = $('#syncBtn');
+  if (!GOOGLE_CLIENT_ID || !settings.driveOn || !state) { b.hidden = true; return; }
+  const text = {ok: 'In Drive gesichert', sync: 'Gleicht ab …', login: settings.driveDirty ? 'Anmelden, um abzugleichen' : 'Drive: anmelden', offline: 'Offline', error: 'Abgleich fehlgeschlagen'}[state];
+  b.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M7 18h10.5a4 4 0 0 0 .6-7.95A6 6 0 0 0 6.4 9.1 4.5 4.5 0 0 0 7 18z"/></svg>${esc(text)}`;
+  b.title = msg || (state === 'ok' && settings.lastSync ? 'Letzter Abgleich: ' + new Date(settings.lastSync).toLocaleString('de-DE') : '');
+  b.classList.toggle('alert', state === 'error' || (state === 'login' && settings.driveDirty));
+  b.disabled = state === 'sync';
+  b.hidden = false;
+}
+function localChanged() {
+  if (!GOOGLE_CLIENT_ID || !settings.driveOn) return;
+  settings.driveDirty = true; saveSettings();
+  clearTimeout(drive.timer); drive.timer = setTimeout(() => driveSync(), 1500);
+}
+async function driveSync({interactive = false} = {}) {
+  if (!GOOGLE_CLIENT_ID || !settings.driveOn) return;
+  if (drive.busy) { drive.again = true; return; }
+  if (!navigator.onLine) { setDriveState('offline'); return; }
+  drive.busy = (async () => {
+    try {
+      if (!hasToken()) {
+        if (!interactive) { setDriveState('login'); return; }
+        await driveSignIn();
+      }
+      setDriveState('sync');
+      const folder = await driveFolder();
+      const id = await driveFile(folder);
+      const remote = id ? await (await gfetch(`${DAPI}/${id}?alt=media`)).json() : {};
+      if (remote.app && remote.app !== 'plattenregal') throw new Error('Die Datei in Google Drive ist keine Plattenregal-Sammlung.');
+      const {recs, del} = mergeData(records, deleted, remote);
+      const local = new Map(records.map(r => [r.id, r])), keep = new Set(recs.map(r => r.id));
+      await dbApply(recs.filter(r => local.get(r.id) !== r), records.filter(r => !keep.has(r.id)).map(r => r.id));
+      deleted = del; saveDeleted();
+      records = mergeData(records, deleted, {records: recs}).recs; // falls während des Abgleichs etwas gespeichert wurde
+      settings.driveFileId = await driveWrite(folder, id, {app: 'plattenregal', version: 1, updatedAt: new Date().toISOString(), records: recs, deleted: del});
+      settings.lastSync = Date.now(); settings.driveDirty = drive.again; saveSettings();
+      setDriveState('ok');
+      render();
+    } catch (e) {
+      setDriveState(e.auth ? 'login' : 'error', e.message);
+      if (interactive) toast(e.message);
+    }
+  })();
+  await drive.busy;
+  drive.busy = null;
+  if (drive.again) { drive.again = false; driveSync(); }
+}
+
+function driveSettingsHTML() {
+  if (!GOOGLE_CLIENT_ID) return '';
+  const body = settings.driveOn
+    ? `<p class="hint">Verbunden. Die Sammlung liegt zusätzlich im Ordner „${DRIVE_FOLDER}“ im eigenen Google Drive und gleicht sich mit allen Geräten ab, die ebenfalls verbunden sind. Letzter Abgleich: ${settings.lastSync ? new Date(settings.lastSync).toLocaleString('de-DE', {dateStyle: 'medium', timeStyle: 'short'}) : 'noch nie'}.</p>
+      ${drive.state === 'error' && drive.msg ? `<p class="warn">${esc(drive.msg)}</p>` : ''}
+      <div class="stack">
+        <button class="btn primary" id="driveSync">Jetzt abgleichen</button>
+        ${settings.driveFolderId ? `<a class="btn ghost" href="https://drive.google.com/drive/folders/${encodeURIComponent(settings.driveFolderId)}" target="_blank" rel="noopener">Ordner in Google Drive öffnen</a>` : ''}
+        <button class="btn danger" id="driveOff">Verbindung trennen</button>
+      </div>`
+    : `<p class="hint">Speichert die Sammlung zusätzlich in einem Ordner „${DRIVE_FOLDER}“ im eigenen Google Drive. So zeigen Handy und Computer dasselbe Regal. Die App sieht dabei nur die Dateien, die sie selbst angelegt hat.</p>
+      <div class="stack"><button class="btn primary" id="driveOn">Mit Google Drive verbinden</button></div>`;
+  return `<section class="set"><h3>Google Drive (optional)</h3>${body}<p class="hint small"><a href="datenschutz.html" target="_blank" rel="noopener">Datenschutz</a></p></section>`;
+}
+function mountDriveSettings(body) {
+  if (!GOOGLE_CLIENT_ID) return;
+  loadGis().catch(() => {}); // vorab laden, damit das Anmeldefenster direkt beim Tippen aufgehen kann
+  const on = $('#driveOn', body), sync = $('#driveSync', body), off = $('#driveOff', body);
+  if (on) on.onclick = async () => {
+    try { await driveSignIn(); } catch (e) { toast(e.message); return; }
+    settings.driveOn = true; settings.driveDirty = true; saveSettings();
+    await driveSync({interactive: true});
+    if (!$('#sheet').hidden) openSettings();
+    if (drive.state === 'ok') toast(`Mit Google Drive verbunden: ${records.length} ${records.length === 1 ? 'Platte' : 'Platten'} im Regal`);
+  };
+  if (sync) sync.onclick = async () => {
+    await driveSync({interactive: true});
+    if (!$('#sheet').hidden) openSettings();
+    if (drive.state === 'ok') toast('Abgeglichen');
+  };
+  if (off) off.onclick = () => {
+    if (!confirm('Verbindung zu Google Drive trennen? Die Platten bleiben auf diesem Gerät und in Google Drive erhalten.')) return;
+    setToken('', 0); // kein revoke: das würde die Verbindung auch auf allen anderen Geräten beenden
+    Object.assign(settings, {driveOn: false, driveFolderId: '', driveFileId: '', lastSync: 0, driveDirty: false}); saveSettings();
+    setDriveState(''); render(); openSettings();
+    toast('Verbindung zu Google Drive getrennt');
+  };
 }
 
 /* ---------- Einstellungen, Sicherung, Export ---------- */
@@ -829,12 +1027,15 @@ async function importJson(file) {
     const data = JSON.parse(await file.text());
     const list = Array.isArray(data) ? data : data.records;
     if (!Array.isArray(list)) throw new Error('Die Datei ist keine Plattenregal-Sicherung.');
-    const valid = list.filter(r => r && r.id && (r.artist || r.title));
+    const now = Date.now();
+    // Zeitstempel erneuern, damit der importierte Stand auch beim Drive-Abgleich gewinnt
+    const valid = list.filter(r => r && r.id && (r.artist || r.title)).map(r => ({...r, updatedAt: now}));
     if (!valid.length) throw new Error('Die Datei enthält keine Platten.');
     if (!confirm(`${valid.length} Platten importieren? Einträge, die schon vorhanden sind, werden durch den Stand aus der Sicherung ersetzt.`)) return;
     await dbPutMany(valid);
+    valid.forEach(r => delete deleted[r.id]); saveDeleted();
     records = await dbAll();
-    requestPersist(); render(); openSettings();
+    requestPersist(); localChanged(); render(); openSettings();
     toast(`${valid.length} Platten importiert`);
   } catch (e) { toast('Import fehlgeschlagen: ' + e.message); }
 }
@@ -842,7 +1043,7 @@ function openSettings() {
   const last = settings.lastBackup ? new Date(settings.lastBackup).toLocaleDateString('de-DE') : 'noch nie';
   openSheet(`<h2 class="sheet-title">Einstellungen</h2>
     <section class="set"><h3>Sicherung</h3>
-      <p class="hint">Die Sammlung ist nur auf diesem Gerät gespeichert. Letzte Sicherung: ${last}. Die Sicherungsdatei am besten in einer Cloud oder per E-Mail an sich selbst ablegen.</p>
+      <p class="hint">${settings.driveOn ? 'Die Sammlung ist auf diesem Gerät und in Google Drive gespeichert. Eine zusätzliche Sicherungsdatei schadet trotzdem nicht.' : 'Die Sammlung ist nur auf diesem Gerät gespeichert. Die Sicherungsdatei am besten in einer Cloud oder per E-Mail an sich selbst ablegen.'} Letzte Sicherung: ${last}.</p>
       <div class="stack">
         <button class="btn primary" id="expJson">Sicherung exportieren</button>
         <button class="btn ghost" id="expCsv">Als Tabelle exportieren (für Excel)</button>
@@ -850,6 +1051,7 @@ function openSettings() {
       </div>
       <p class="hint small" id="persist"></p>
     </section>
+    ${driveSettingsHTML()}
     <section class="set"><h3>Discogs (optional)</h3>
       <p class="hint">Mit einem persönlichen Discogs-Token sucht die App zusätzlich bei Discogs. Dort sind mehr Vinyl-Pressungen erfasst, und die Genre-Angaben sind genauer.</p>
       <form id="tokForm" class="inline-form"><input name="tok" type="password" value="${esc(settings.discogsToken)}" placeholder="Token einfügen" autocomplete="off" aria-label="Discogs-Token"><button class="btn">Speichern</button></form>
@@ -863,6 +1065,7 @@ function openSettings() {
     $('#expCsv', body).onclick = exportCsv;
     $('#impFile', body).onchange = e => { const f = e.target.files[0]; if (f) importJson(f); e.target.value = ''; };
     $('#tokForm', body).onsubmit = e => { e.preventDefault(); settings.discogsToken = e.target.tok.value.trim(); saveSettings(); toast(settings.discogsToken ? 'Discogs-Token gespeichert' : 'Discogs-Token entfernt'); };
+    mountDriveSettings(body);
     navigator.storage?.persisted?.().then(p => {
       const el = $('#persist'); if (!el) return;
       el.textContent = p ? 'Der Browser bewahrt die Daten dauerhaft auf.' : 'Der Browser darf die Daten bei Speichermangel löschen. Deshalb regelmäßig sichern.';
@@ -893,6 +1096,10 @@ function initControls() {
   $('#search').addEventListener('input', render);
   $('#scanBtn').onclick = openScanner;
   $('#settingsBtn').onclick = openSettings;
+  $('#syncBtn').onclick = () => driveSync({interactive: true});
+  window.addEventListener('online', () => driveSync());
+  window.addEventListener('offline', () => setDriveState('offline'));
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && Date.now() - settings.lastSync > 30000) driveSync(); });
   $('#list').addEventListener('click', e => {
     if (e.target.closest('[data-action="backup"]')) { exportJson(); return; }
     const b = e.target.closest('[data-id]'); if (b) openDetail(b.dataset.id);
@@ -906,6 +1113,7 @@ function initControls() {
   catch (e) { $('#list').innerHTML = '<p class="empty">Die Datenbank konnte nicht geöffnet werden. Im privaten Modus des Browsers kann die App nichts speichern.</p>'; return; }
   render();
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(() => {});
+  if (GOOGLE_CLIENT_ID && settings.driveOn) { loadGis().catch(() => {}); driveSync(); }
 })();
 </script>
 </body>
