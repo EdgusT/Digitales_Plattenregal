@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Datenschutz – Plattenregal</title>
+<link rel="icon" href="icon-192.png">
+<style>
+:root{--bg:#E7EAEE;--surface:#F8F9FB;--ink:#1B2230;--muted:#596377;--blue:#2F4A73;color-scheme:light}
+@media (prefers-color-scheme: dark){:root{--bg:#12161E;--surface:#1B212C;--ink:#E6E9EE;--muted:#8E98AA;--blue:#9DB8E3;color-scheme:dark}}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 "Arial Narrow",system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:680px;margin:0 auto;padding:28px 16px 48px}
+h1{font-size:2.2rem;line-height:1;margin:0 0 18px}
+h2{font-size:1.2rem;margin:28px 0 6px}
+p,li{color:var(--ink)}
+.muted{color:var(--muted);font-size:.9rem}
+a{color:var(--blue)}
+</style>
+</head>
+<body>
+<main>
+<h1>Datenschutz</h1>
+<p>Plattenregal ist eine kleine Web-App zum Erfassen der eigenen Schallplattensammlung. Sie hat keinen eigenen Server und kein Benutzerkonto. Der Betreiber der App erhält keine Daten über Nutzer oder deren Sammlung.</p>
+
+<h2>Speicherung auf dem Gerät</h2>
+<p>Alle Platten und Einstellungen werden im Browser des jeweiligen Geräts gespeichert (IndexedDB und localStorage). Sie verlassen das Gerät nur, wenn man selbst eine Sicherung exportiert oder den Abgleich mit Google Drive einschaltet.</p>
+
+<h2>Google Drive (optional)</h2>
+<p>Wer den Abgleich mit Google Drive einschaltet, meldet sich über Google an und erteilt der App Zugriff mit der Berechtigung <em>drive.file</em>. Damit kann die App ausschließlich Dateien sehen und ändern, die sie selbst angelegt hat. Andere Dateien im Google Drive bleiben für die App unsichtbar.</p>
+<ul>
+  <li>Die App legt im eigenen Google Drive den Ordner „Plattenregal“ mit der Datei „plattenregal.json“ an. Darin steht die Sammlung.</li>
+  <li>Die Daten werden direkt zwischen dem Browser und Google übertragen. Sie laufen über keinen Server des Betreibers.</li>
+  <li>Der Zugangsschlüssel von Google gilt etwa eine Stunde und wird nur auf dem Gerät gespeichert.</li>
+  <li>Die Verbindung lässt sich jederzeit in den Einstellungen der App trennen. Den Zugriff ganz entziehen kann man unter <a href="https://myaccount.google.com/connections" target="_blank" rel="noopener">myaccount.google.com/connections</a>. Die Datei in Google Drive kann man jederzeit selbst löschen.</li>
+</ul>
+<p>Die Nutzung und Übertragung von Daten, die die App über Google-APIs erhält, entspricht der <a href="https://developers.google.com/terms/api-services-user-data-policy" target="_blank" rel="noopener">Google API Services User Data Policy</a>, einschließlich der Anforderungen zur eingeschränkten Nutzung (Limited Use).</p>
+
+<h2>Abfragen bei Musikdatenbanken</h2>
+<p>Beim Scannen oder Suchen schickt die App den Barcode oder den Suchbegriff an <a href="https://musicbrainz.org" target="_blank" rel="noopener">MusicBrainz</a> und, falls ein eigener Token hinterlegt ist, an <a href="https://www.discogs.com" target="_blank" rel="noopener">Discogs</a>. Cover-Bilder werden vom Cover Art Archive bzw. von Discogs geladen. Dabei sehen diese Dienste, wie bei jedem Webseitenaufruf, die IP-Adresse des Geräts. Die Schriftart wird von Google Fonts geladen.</p>
+
+<h2>Kontakt</h2>
+<p>Fragen zur App über das Projekt auf GitHub: <a href="https://github.com/EdgusT/Digitales_Plattenregal" target="_blank" rel="noopener">github.com/EdgusT/Digitales_Plattenregal</a>.</p>
+
+<p class="muted">Stand: Oktober 2026 · <a href="./">Zurück zur App</a></p>
+</main>
+</body>
+</html>
