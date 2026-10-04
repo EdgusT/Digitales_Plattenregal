@@ -338,12 +338,18 @@ textarea{resize:vertical}
 .chart{margin-bottom:22px}
 .chart h3{margin:0 0 10px;font-weight:800;font-stretch:75%;font-size:1.15rem;text-transform:uppercase}
 .bars{display:grid;grid-template-columns:minmax(0,7.5rem) 1fr auto;gap:7px 10px;align-items:center;font-size:.86rem}
+.bars.long{grid-template-columns:minmax(0,1fr) 26% auto}
 .bars .l{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink)}
 .bars .v{font-family:var(--mono);font-size:.74rem;color:var(--muted);text-align:right;white-space:nowrap}
 .bars .track{display:block;height:12px;border-radius:2px;background:rgba(255,255,255,.04)}
 .bars .fill{display:block;height:100%;min-width:3px;border-radius:0 4px 4px 0;background:var(--accent)}
 .bars .track:hover .fill{background:#f6b354}
-.set.market{margin-top:8px}
+.tile.hero{background:linear-gradient(135deg,rgba(240,162,59,.16),var(--field) 70%);border-color:rgba(240,162,59,.35)}
+.tile.hero strong{font-size:2.3rem;color:var(--accent)}
+.market{margin-bottom:24px}
+.market .stack{margin-top:0}
+.badge.price{background:rgba(240,162,59,.14);border-color:rgba(240,162,59,.4);color:var(--accent)}
+.mval{color:var(--accent);font-size:.82rem;margin-top:4px;font-family:var(--mono)}
 .set.market .tiles{margin-bottom:6px}
 .sync.alert{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:700}
 </style>
@@ -755,7 +761,15 @@ async function mbDetails(r) {
 }
 
 /* ---------- Discogs (optional, mit Token) ---------- */
+// Discogs erlaubt mit Token etwa 60 Anfragen pro Minute: alle Anfragen nacheinander mit gut einer Sekunde Abstand
+let dgLast = 0, dgChain = Promise.resolve();
+function dgSlot() {
+  const slot = dgChain.then(async () => { const w = dgLast + 1100 - Date.now(); if (w > 0) await sleep(w); dgLast = Date.now(); });
+  dgChain = slot.catch(() => {});
+  return slot;
+}
 async function dgSearch(params) {
+  await dgSlot();
   const u = new URL('https://api.discogs.com/database/search');
   Object.entries({type: 'release', per_page: 20, ...params, token: settings.discogsToken}).forEach(([k, v]) => { if (v) u.searchParams.set(k, v); });
   const r = await fetch(u);
@@ -778,13 +792,19 @@ async function dgSearch(params) {
 
 /* ---------- Suche und Treffer ---------- */
 const isVinyl = r => /vinyl|LP\b/i.test(r.format || '') ? 1 : 0;
+// Mit Discogs-Token ist Discogs die Quelle. MusicBrainz springt nur ein, wenn Discogs nichts findet oder nicht erreichbar ist.
+async function searchSources(dg, mb) {
+  if (!settings.discogsToken) return Promise.allSettled([mb()]);
+  const [first] = await Promise.allSettled([dg()]);
+  if (first.status === 'fulfilled' && first.value.length) return [first];
+  const [second] = await Promise.allSettled([mb()]);
+  return first.status === 'rejected' ? [first, second] : [second];
+}
 async function lookupBarcode(code) {
   const id = ++flow;
   const existing = records.filter(r => r.barcode && r.barcode.replace(/^0+/, '') === code.replace(/^0+/, ''));
   openSheet(loadingHTML(`Suche nach Barcode ${code} …`));
-  const tasks = [mbSearch(barcodeQuery(code))];
-  if (settings.discogsToken) tasks.push(dgSearch({barcode: code}));
-  const res = await Promise.allSettled(tasks);
+  const res = await searchSources(() => dgSearch({barcode: code}), () => mbSearch(barcodeQuery(code)));
   if (id !== flow) return;
   showResults(res, {barcode: code, existing, label: `Barcode ${code}`});
 }
@@ -804,9 +824,7 @@ async function textLookup(f) {
   if (c) parts.push(`catno:"${c}"`);
   const id = ++flow;
   openSheet(loadingHTML('Suche …'));
-  const tasks = [mbSearch(parts.join(' AND '))];
-  if (settings.discogsToken) tasks.push(dgSearch({artist: a, release_title: t, catno: c}));
-  const res = await Promise.allSettled(tasks);
+  const res = await searchSources(() => dgSearch({artist: a, release_title: t, catno: c}), () => mbSearch(parts.join(' AND ')));
   if (id !== flow) return;
   showResults(res, {barcode: '', existing: [], label: [a, t, c].filter(Boolean).join(', ')});
 }
@@ -815,7 +833,7 @@ function showResults(settled, ctx) {
   settled.forEach(s => s.status === 'fulfilled' ? results.push(...s.value) : errors.push(s.reason?.message || 'Unbekannter Fehler'));
   results.sort((a, b) => isVinyl(b) - isVinyl(a));
   const ex = ctx.existing.map(r => `<div class="warn">${r.sold ? `Hattest du schon, verkauft${r.soldOn ? ' am ' + esc(dateText(r.soldOn)) : ''}:` : 'Schon im Regal:'} <strong>${esc(r.artist)} – ${esc(r.title)}</strong> (Nr. ${esc(r.inv)}${r.shelf ? ', Fach ' + esc(r.shelf) : ''})<br><button class="btn ghost" data-show="${esc(r.id)}">Ansehen</button></div>`).join('');
-  const list = results.map((r, i) => `<button class="result" data-i="${i}">${coverHTML(r)}<span><span class="a">${esc(r.artist)} – ${esc(r.title)}</span><br><span class="m">${esc([r.year, r.country, [r.label, r.catno].filter(Boolean).join(' '), r.format].filter(Boolean).join(', '))}</span><br>${isVinyl(r) ? '<span class="badge vinyl">Vinyl</span> ' : ''}<span class="badge">${r.source === 'discogs' ? 'Discogs' : 'MusicBrainz'}</span></span></button>`).join('');
+  const list = results.map((r, i) => `<button class="result" data-i="${i}">${coverHTML(r)}<span><span class="a">${esc(r.artist)} – ${esc(r.title)}</span><br><span class="m">${esc([r.year, r.country, [r.label, r.catno].filter(Boolean).join(' '), r.format].filter(Boolean).join(', '))}</span><br>${isVinyl(r) ? '<span class="badge vinyl">Vinyl</span> ' : ''}${r.source === 'discogs' ? (settings.discogsToken && i < PRICE_RESULTS ? `<span class="badge price" data-price="${esc(r.sourceId)}">${priceBadge(r.sourceId)}</span>` : '') : '<span class="badge">MusicBrainz</span>'}</span></button>`).join('');
   openSheet(`<h2 class="sheet-title">${results.length ? 'Welche Pressung?' : 'Nichts gefunden'}</h2>
     <p class="hint">${esc(ctx.label)}${results.length ? `, ${results.length} Treffer` : ''}</p>
     ${ex}
@@ -824,6 +842,7 @@ function showResults(settled, ctx) {
     <div class="alt-actions"><button class="btn ghost" id="again">Nochmal scannen</button><button class="btn ghost" id="toText">Anders suchen</button><button class="btn ghost" id="toManual">Von Hand eintragen</button></div>`,
   body => {
     body.querySelectorAll('[data-i]').forEach(b => b.onclick = () => chooseResult(results[+b.dataset.i], ctx.barcode));
+    loadResultPrices(results.slice(0, PRICE_RESULTS).filter(r => r.source === 'discogs').map(r => r.sourceId), flow);
     body.querySelectorAll('[data-show]').forEach(b => b.onclick = () => openDetail(b.dataset.show));
     $('#again', body).onclick = openScanner;
     $('#toText', body).onclick = openTextSearch;
@@ -842,7 +861,9 @@ async function chooseResult(r, barcode) {
 }
 const emptyDraft = () => ({id: null, artist: '', artistSort: '', title: '', year: '', origYear: '', genre: '', styles: [], label: '', catno: '', country: '', format: 'Vinyl, LP', barcode: '', cover: '', coverFallback: '', source: 'manual', sourceId: '', shelf: '', tags: [], condition: '', rating: 0, notes: '', price: '', boughtAt: '', boughtOn: ''});
 function draftFrom(r, barcode) {
-  return {...emptyDraft(), artist: r.artist, artistSort: r.artistSort, title: r.title, year: r.year, origYear: r.origYear || r.year,
+  const dgId = r.source === 'discogs' ? r.sourceId : '';
+  const m = dgId && dgPrices.get(dgId);
+  return {...emptyDraft(), discogsId: dgId, market: m && m.value ? {...m} : undefined, artist: r.artist, artistSort: r.artistSort, title: r.title, year: r.year, origYear: r.origYear || r.year,
     genre: r.genre || '', styles: r.styles || [], label: r.label, catno: r.catno, country: r.country, format: r.format,
     barcode: barcode || r.barcode || '', cover: r.cover || '', coverFallback: r.coverFallback || '', source: r.source, sourceId: r.sourceId};
 }
@@ -854,7 +875,7 @@ const datalist = (id, arr) => `<datalist id="${id}">${arr.map(v => `<option valu
 function openEdit(d, isNew) {
   const inv = d.inv || nextInv();
   openSheet(`<h2 class="sheet-title">${isNew ? 'Platte hinzufügen' : 'Platte bearbeiten'}</h2>
-    <div class="edit-head">${coverHTML(d)}<div><div class="a">${esc(d.artist || 'Neue Platte')}</div><div>${esc(d.title)}</div>${d.source && d.source !== 'manual' ? `<div class="m">Daten von ${d.source === 'discogs' ? 'Discogs' : 'MusicBrainz'}. Bitte kurz prüfen.</div>` : ''}</div></div>
+    <div class="edit-head">${coverHTML(d)}<div><div class="a">${esc(d.artist || 'Neue Platte')}</div><div>${esc(d.title)}</div>${d.source && d.source !== 'manual' ? `<div class="m">Daten von ${d.source === 'discogs' ? 'Discogs' : 'MusicBrainz'}. Bitte kurz prüfen.</div>` : ''}${settings.discogsToken && (d.discogsId || d.market) ? `<div class="mval" id="mval">${d.market && d.market.value ? marketLine(d.market) : 'Marktwert wird geladen …'}</div>` : ''}</div></div>
     <form id="editForm" class="form">
       <fieldset><legend>Platte</legend>
         ${field('artist', 'Künstler', d.artist, 'required')}
@@ -889,6 +910,13 @@ function openEdit(d, isNew) {
     const stars = $('.stars', body);
     stars.addEventListener('change', e => { stars.dataset.r = e.target.value; });
     $('#editForm', body).onsubmit = e => { e.preventDefault(); saveRecord(d, new FormData(e.target), isNew); };
+    if (settings.discogsToken && d.discogsId && !(d.market && d.market.value)) {
+      const f = flow;
+      marketValueOf(d.discogsId, d.condition).then(v => {
+        if (v) d.market = {...v, at: Date.now()};
+        const el = $('#mval'); if (el && f === flow) el.textContent = v ? marketLine(d.market) : 'Kein Marktwert bei Discogs';
+      }).catch(() => { const el = $('#mval'); if (el && f === flow) el.textContent = 'Marktwert gerade nicht abrufbar'; });
+    }
   });
 }
 async function saveRecord(d, fd, isNew) {
@@ -907,6 +935,7 @@ async function saveRecord(d, fd, isNew) {
   if (i >= 0) records[i] = rec; else records.push(rec);
   requestPersist(); localChanged();
   render();
+  if (settings.discogsToken && rec.discogsId && !rec.sold && (!rec.market || rec.market.cond !== (rec.condition || 'VG+'))) refreshMarket(rec.id);
   if (isNew) { closeSheet(); toast(`Gespeichert als Nr. ${inv}: ${rec.artist} – ${rec.title}`, {label: 'Nächste scannen', fn: openScanner}); }
   else { openDetail(rec.id); toast('Änderungen gespeichert'); }
 }
@@ -1001,10 +1030,10 @@ function topN(entries, max) {
   if (sorted.length <= max) return sorted;
   return [...sorted.slice(0, max - 1), ['Andere', sorted.slice(max - 1).reduce((a, e) => a + e[1], 0)]];
 }
-function barsHTML(title, entries, fmt = v => String(v), note = '') {
+function barsHTML(title, entries, fmt = v => String(v), note = '', cls = '') {
   if (!entries.length) return '';
   const max = Math.max(...entries.map(e => e[1]));
-  return `<section class="chart"><h3>${esc(title)}</h3><div class="bars">${entries.map(([k, v]) => `<span class="l" title="${esc(k)}">${esc(k)}</span><span class="track" title="${esc(k)}: ${esc(fmt(v))}"><span class="fill" style="width:${max ? Math.max(1, v / max * 100) : 0}%"></span></span><span class="v">${esc(fmt(v))}</span>`).join('')}</div>${note ? `<p class="hint small">${note}</p>` : ''}</section>`;
+  return `<section class="chart"><h3>${esc(title)}</h3><div class="bars ${cls}">${entries.map(([k, v]) => `<span class="l" title="${esc(k)}">${esc(k)}</span><span class="track" title="${esc(k)}: ${esc(fmt(v))}"><span class="fill" style="width:${max ? Math.max(1, v / max * 100) : 0}%"></span></span><span class="v">${esc(fmt(v))}</span>`).join('')}</div>${note ? `<p class="hint small">${note}</p>` : ''}</section>`;
 }
 function openStats() {
   const shelf = records.filter(r => !r.sold), sold = records.filter(r => r.sold);
@@ -1016,7 +1045,7 @@ function openStats() {
   const rated = shelf.filter(r => r.rating);
   const tiles = [
     `<div class="tile"><span>Im Regal</span><strong>${shelf.length}</strong><small>${shelf.length === 1 ? 'Platte' : 'Platten'}</small></div>`,
-    `<div class="tile"><span>Sammlungswert</span><strong>${priced.length ? esc(priceText(value)) : '–'}</strong><small>${priced.length ? `Einkaufspreise von ${priced.length} der ${shelf.length} Platten` : 'Einkaufspreise eintragen, dann steht hier der Wert'}</small></div>`,
+    `<div class="tile"><span>Einkaufswert</span><strong>${priced.length ? esc(priceText(value)) : '–'}</strong><small>${priced.length ? `Einkaufspreise von ${priced.length} der ${shelf.length} Platten` : 'Einkaufspreise eintragen, dann steht hier die Summe'}</small></div>`,
     `<div class="tile"><span>Ø pro Platte</span><strong>${priced.length ? esc(priceText(value / priced.length)) : '–'}</strong><small>Einkaufspreis</small></div>`,
     `<div class="tile"><span>Ø Bewertung</span><strong>${rated.length ? (rated.reduce((a, r) => a + r.rating, 0) / rated.length).toLocaleString('de-DE', {maximumFractionDigits: 1}) + ' ★' : '–'}</strong><small>${rated.length ? `aus ${rated.length} Bewertungen` : 'noch keine Bewertungen'}</small></div>`
   ];
@@ -1024,7 +1053,7 @@ function openStats() {
 
   const facts = [];
   const priciest = priced.slice().sort((a, b) => b.price - a.price)[0];
-  if (priciest) facts.push(['Teuerste Platte', `${priciest.artist} – ${priciest.title} (${priceText(priciest.price)})`]);
+  if (priciest) facts.push(['Teuerster Einkauf', `${priciest.artist} – ${priciest.title} (${priceText(priciest.price)})`]);
   const oldest = shelf.filter(r => parseInt(r.year)).sort((a, b) => parseInt(a.year) - parseInt(b.year))[0];
   if (oldest) facts.push(['Älteste Pressung', `${oldest.artist} – ${oldest.title} (${parseInt(oldest.year)})`]);
   const topArtist = countBy(shelf, r => r.artist).sort((a, b) => b[1] - a[1])[0];
@@ -1039,15 +1068,16 @@ function openStats() {
   const n = v => `${v} ${v === 1 ? 'Platte' : 'Platten'}`;
 
   openSheet(`<h2 class="sheet-title">Statistik</h2>
-    <div class="tiles">${tiles.join('')}</div>
-    ${facts.length ? `<ul class="facts">${facts.map(([k, v]) => `<li><span>${k}</span>${esc(v)}</li>`).join('')}</ul>` : ''}
+    <section class="market"><div id="marketBox">${marketHTML()}</div></section>
     ${barsHTML('Genres', topN(countBy(shelf, r => r.genre || 'Ohne Genre'), 8), n)}
     ${barsHTML('Jahrzehnte', decades, n, 'Nach Erstveröffentlichung, sonst nach Pressungsjahr.')}
     ${barsHTML('Ausgaben pro Jahr', spent, v => priceText(v), 'Einkaufspreise nach Einkaufsdatum, verkaufte Platten eingeschlossen.')}
     ${barsHTML('Künstler mit den meisten Platten', topN(countBy(shelf, r => r.artist), 6), n)}
     ${barsHTML('Einkaufsorte', topN(countBy(records, r => r.boughtAt), 6), n)}
     ${sold.length ? barsHTML('Verkauft über', topN(countBy(sold, r => r.soldTo || 'Ohne Angabe'), 6), n) : ''}
-    <section class="set market"><h3>Marktwert (Discogs)</h3><div id="marketBox">${marketHTML()}</div></section>`,
+    <section class="chart"><h3>Einkauf und Verkauf</h3><div class="tiles">${tiles.join('')}</div>
+    ${facts.length ? `<ul class="facts">${facts.map(([k, v]) => `<li><span>${k}</span>${esc(v)}</li>`).join('')}</ul>` : ''}</section>
+    ${settings.discogsToken ? `<p class="hint small">So schätzt die App den Marktwert: Sie nimmt den Discogs-Preisvorschlag für den eingetragenen Zustand (ohne Angabe: VG+), sonst das günstigste aktuelle Angebot. Platten, die nicht über Discogs erfasst wurden, sucht sie über Barcode oder Künstler und Titel. Dabei kann eine andere Pressung erwischt werden. Die Detailansicht verlinkt den gefundenen Eintrag.</p>` : ''}`,
   body => {
     $('#marketBox', body).addEventListener('click', e => {
       const b = e.target.closest('[data-m]'); if (!b) return;
@@ -1061,11 +1091,8 @@ function openStats() {
 const DG_COND = {M: 'Mint (M)', NM: 'Near Mint (NM or M-)', 'VG+': 'Very Good Plus (VG+)', VG: 'Very Good (VG)', 'G+': 'Good Plus (G+)', G: 'Good (G)', P: 'Poor (P)'};
 const market = {running: false, stop: false, done: 0, total: 0, errors: 0, msg: '', noSuggest: false};
 const money = (v, cur) => { try { return Number(v).toLocaleString('de-DE', {style: 'currency', currency: cur || 'EUR'}); } catch (e) { return Number(v).toFixed(2) + ' ' + (cur || ''); } };
-let dgLast = 0;
-// Discogs erlaubt mit Token etwa 60 Anfragen pro Minute, daher gut eine Sekunde Abstand
 async function dgGet(path, params = {}) {
-  const wait = dgLast + 1100 - Date.now(); if (wait > 0) await sleep(wait);
-  dgLast = Date.now();
+  await dgSlot();
   const u = new URL('https://api.discogs.com/' + path);
   Object.entries({...params, token: settings.discogsToken}).forEach(([k, v]) => { if (v) u.searchParams.set(k, v); });
   const r = await fetch(u);
@@ -1096,12 +1123,38 @@ async function marketValueOf(id, cond) {
   if (!market.noSuggest) {
     try {
       const v = (await dgGet(`marketplace/price_suggestions/${id}`))[DG_COND[cond] || DG_COND['VG+']];
-      if (v && v.value) return {value: Math.round(v.value * 100) / 100, currency: v.currency || 'EUR', kind: 'suggestion'};
+      if (v && v.value) return {value: Math.round(v.value * 100) / 100, currency: v.currency || 'EUR', kind: 'suggestion', cond: DG_COND[cond] ? cond : 'VG+'};
     } catch (e) { if (e.fatal) throw e; market.noSuggest = true; } // z. B. ohne Verkäufer-Einstellungen bei Discogs nicht verfügbar
   }
   const st = await dgGet(`marketplace/stats/${id}`, {curr_abbr: 'EUR'});
-  if (st.lowest_price && st.lowest_price.value) return {value: Math.round(st.lowest_price.value * 100) / 100, currency: st.lowest_price.currency || 'EUR', kind: 'lowest', forSale: st.num_for_sale || 0};
+  if (st.lowest_price && st.lowest_price.value) return {value: Math.round(st.lowest_price.value * 100) / 100, currency: st.lowest_price.currency || 'EUR', kind: 'lowest', forSale: st.num_for_sale || 0, cond: cond || 'VG+'};
   return null;
+}
+const PRICE_RESULTS = 6; // so viele Treffer bekommen direkt einen Preis
+const dgPrices = new Map(); // Discogs-ID -> Wert (Preisvorschlag VG+ oder günstigstes Angebot)
+const marketLine = m => `Marktwert (Discogs): ca. ${money(m.value, m.currency)}${m.kind === 'lowest' ? ', günstigstes Angebot' : ''}`;
+function priceBadge(id) {
+  const m = dgPrices.get(id);
+  if (!dgPrices.has(id)) return '…';
+  return m && m.value ? `ca. ${esc(money(m.value, m.currency))}` : 'kein Preis';
+}
+async function loadResultPrices(ids, f) {
+  for (const id of ids) {
+    if (f !== flow) return;
+    if (!dgPrices.has(id)) {
+      try { dgPrices.set(id, await marketValueOf(id, 'VG+')); } catch (e) { dgPrices.set(id, null); }
+    }
+    document.querySelectorAll(`[data-price="${CSS.escape(id)}"]`).forEach(el => { el.innerHTML = priceBadge(id); });
+  }
+}
+async function refreshMarket(id) {
+  const r = records.find(x => x.id === id);
+  if (!r || !r.discogsId) return;
+  try {
+    const v = await marketValueOf(r.discogsId, r.condition);
+    const cur = records.find(x => x.id === id);
+    if (cur) await putRecord({...cur, market: v ? {...v, at: Date.now()} : {none: true, at: Date.now()}, updatedAt: Date.now()});
+  } catch (e) {}
 }
 async function fetchMarketValues(all) {
   if (market.running || !settings.discogsToken) return;
@@ -1124,7 +1177,7 @@ async function fetchMarketValues(all) {
   updateMarketUI();
 }
 function marketHTML() {
-  if (!settings.discogsToken) return `<p class="hint">Mit einem kostenlosen Discogs-Token (Einstellungen) schätzt die App hier, was die Platten heute auf dem Discogs-Marktplatz wert sind.</p>`;
+  if (!settings.discogsToken) return `<p class="hint small">Mit einem kostenlosen Discogs-Token (Einstellungen) zeigt die App hier, was die Sammlung heute auf dem Discogs-Marktplatz wert ist.</p>`;
   const shelf = records.filter(r => !r.sold);
   const valued = shelf.filter(r => r.market && r.market.value), none = shelf.filter(r => r.market && r.market.none).length;
   const missing = shelf.filter(r => !r.market).length;
@@ -1136,10 +1189,12 @@ function marketHTML() {
   const paid = sumOf(both, 'price'), worth = Math.round(both.reduce((a, r) => a + r.market.value, 0) * 100) / 100;
   let html = '';
   if (valued.length) {
-    html += `<div class="tiles"><div class="tile wide"><span>Geschätzter Marktwert</span><strong>ca. ${esc(total)}</strong><small>für ${valued.length} von ${shelf.length} Platten · Stand ${new Date(oldest).toLocaleDateString('de-DE')}</small></div></div>`;
-    if (both.length) html += `<p class="hint">Diese ${both.length === 1 ? 'eine Platte hat' : both.length + ' Platten haben'} zusammen ${esc(priceText(paid))} gekostet und ${both.length === 1 ? 'ist' : 'sind'} heute etwa ${esc(priceText(worth))} wert (${esc(signed(Math.round((worth - paid) * 100) / 100))}).</p>`;
+    html += `<div class="tiles"><div class="tile wide hero"><span>Wert der Sammlung laut Discogs</span><strong>ca. ${esc(total)}</strong><small>für ${valued.length} von ${shelf.length} Platten · Stand ${new Date(oldest).toLocaleDateString('de-DE')}</small></div>
+      ${both.length ? `<div class="tile"><span>Wertentwicklung</span><strong>${esc(signed(Math.round((worth - paid) * 100) / 100))}</strong><small>${both.length} ${both.length === 1 ? 'Platte' : 'Platten'}: gekauft für ${esc(priceText(paid))}, heute ca. ${esc(priceText(worth))}</small></div>` : ''}
+      <div class="tile${both.length ? '' : ' wide'}"><span>Ø Marktwert</span><strong>${esc(money(valued.reduce((a, r) => a + r.market.value, 0) / valued.length, valued[0].market.currency))}</strong><small>pro Platte</small></div></div>
+`;
     const top = valued.filter(r => r.market.currency === 'EUR').sort((a, b) => b.market.value - a.market.value).slice(0, 5).map(r => [`${r.artist} – ${r.title}`, r.market.value]);
-    html += barsHTML('Wertvollste Platten', top, v => priceText(v));
+    html += barsHTML('Wertvollste Platten laut Discogs', top, v => 'ca. ' + priceText(v), '', 'long');
   }
   if (market.running) html += `<p class="sell-calc">Werte werden abgerufen: <b>${market.done} von ${market.total}</b> · etwa 1–3 Sekunden pro Platte</p>${market.msg ? `<p class="hint small">${esc(market.msg)}</p>` : ''}<div class="stack"><button class="btn ghost" data-m="stop">Abbrechen</button></div>`;
   else {
@@ -1148,7 +1203,6 @@ function marketHTML() {
     html += `<div class="stack">${missing ? `<button class="btn ghost" data-m="missing">${valued.length ? `Fehlende Werte abrufen (${missing})` : `Werte bei Discogs abrufen (${missing} ${missing === 1 ? 'Platte' : 'Platten'})`}</button>` : ''}${valued.length || none ? '<button class="btn ghost" data-m="all">Alle Werte aktualisieren</button>' : ''}</div>`;
   }
   if (none) html += `<p class="hint small">${none} ${none === 1 ? 'Platte wurde' : 'Platten wurden'} bei Discogs nicht gefunden oder dort gerade nicht angeboten.</p>`;
-  html += `<p class="hint small">Schätzung über Discogs: der Preisvorschlag für den eingetragenen Zustand (ohne Angabe: VG+), sonst das günstigste aktuelle Angebot. Platten, die nicht von Discogs stammen, sucht die App über Barcode oder Künstler und Titel. Dabei kann eine andere Pressung erwischt werden, die Detailansicht verlinkt den gefundenen Eintrag.</p>`;
   return html;
 }
 function updateMarketUI() { const box = $('#marketBox'); if (box) box.innerHTML = marketHTML(); }
