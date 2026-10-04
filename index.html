@@ -343,6 +343,8 @@ textarea{resize:vertical}
 .bars .track{display:block;height:12px;border-radius:2px;background:rgba(255,255,255,.04)}
 .bars .fill{display:block;height:100%;min-width:3px;border-radius:0 4px 4px 0;background:var(--accent)}
 .bars .track:hover .fill{background:#f6b354}
+.set.market{margin-top:8px}
+.set.market .tiles{margin-bottom:6px}
 .sync.alert{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:700}
 </style>
 </head>
@@ -918,14 +920,17 @@ function openDetail(id) {
     ['Land', r.country], ['Format', r.format], ['Barcode', r.barcode], ['Zustand', r.condition ? (CONDITIONS.find(c => c[0] === r.condition) || [, r.condition])[1] : ''],
     ['Kategorien', (r.tags || []).join(', ')], ['Einsortiert unter', r.artistSort],
     ['Einkaufspreis', priceText(r.price)], ['Einkaufsort', r.boughtAt], ['Einkaufsdatum', dateText(r.boughtOn)],
+    ['Marktwert (Discogs)', r.market && r.market.value ? `ca. ${money(r.market.value, r.market.currency)}${r.market.kind === 'lowest' ? ' (günstigstes Angebot)' : ''}` : ''],
     ...(r.sold ? [['Verkaufspreis', priceText(r.soldPrice)], ['Verkaufsdatum', dateText(r.soldOn)], ['Verkauft an', r.soldTo], ['Gewinn', profitText(r)]] : [])].filter(([, v]) => v);
-  const link = r.source === 'discogs' ? `https://www.discogs.com/release/${encodeURIComponent(r.sourceId)}` : r.source === 'musicbrainz' ? `https://musicbrainz.org/release/${encodeURIComponent(r.sourceId)}` : '';
+  const dgId = r.source === 'discogs' ? r.sourceId : r.discogsId;
+  const linkSrc = dgId ? 'Discogs' : r.source === 'musicbrainz' ? 'MusicBrainz' : '';
+  const link = dgId ? `https://www.discogs.com/release/${encodeURIComponent(dgId)}` : r.source === 'musicbrainz' ? `https://musicbrainz.org/release/${encodeURIComponent(r.sourceId)}` : '';
   openSheet(`<div class="d-hero" style="--h:${hue(r.artist)}${r.cover ? `;--hero:url('${esc(r.cover.replace(/['\\()]/g, c => '%' + c.charCodeAt(0).toString(16)))}')` : ''}"><div class="detail-cover${r.sold ? ' sold' : ''}">${coverHTML(r)}${r.sold ? '<span class="stamp">Verkauft</span>' : ''}<span class="lp" style="--h:${hue(r.artist)}"><i></i></span><span class="sticker"><small>Nr.</small><b>${esc(r.inv)}</b></span></div></div>
     <h2 class="d-artist">${esc(r.artist)}</h2><p class="d-title">${esc(r.title)}</p>
     <div class="d-place"><div><span>Regalfach</span><strong>${esc(r.shelf || '–')}</strong></div>${r.rating ? `<div><span>Bewertung</span><strong class="stars-ro" aria-label="${r.rating} von 5 Sternen">${'★'.repeat(r.rating)}</strong></div>` : ''}</div>
     <dl class="meta">${meta.map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join('')}</dl>
     ${r.notes ? `<p class="notes">${esc(r.notes)}</p>` : ''}
-    <div class="actions"><button class="btn primary" id="editBtn">Bearbeiten</button>${r.sold ? '<button class="btn ghost" id="unsellBtn">Zurück ins Regal</button>' : '<button class="btn ghost" id="sellBtn">Verkauft …</button>'}${link ? `<a class="btn ghost" href="${link}" target="_blank" rel="noopener">Bei ${r.source === 'discogs' ? 'Discogs' : 'MusicBrainz'} ansehen</a>` : ''}<button class="btn danger" id="delBtn">Löschen</button></div>`,
+    <div class="actions"><button class="btn primary" id="editBtn">Bearbeiten</button>${r.sold ? '<button class="btn ghost" id="unsellBtn">Zurück ins Regal</button>' : '<button class="btn ghost" id="sellBtn">Verkauft …</button>'}${link ? `<a class="btn ghost" href="${link}" target="_blank" rel="noopener">Bei ${linkSrc} ansehen</a>` : ''}<button class="btn danger" id="delBtn">Löschen</button></div>`,
   body => {
     $('#editBtn', body).onclick = () => openEdit(r, false);
     if (r.sold) $('#unsellBtn', body).onclick = () => unsell(r);
@@ -1041,8 +1046,112 @@ function openStats() {
     ${barsHTML('Ausgaben pro Jahr', spent, v => priceText(v), 'Einkaufspreise nach Einkaufsdatum, verkaufte Platten eingeschlossen.')}
     ${barsHTML('Künstler mit den meisten Platten', topN(countBy(shelf, r => r.artist), 6), n)}
     ${barsHTML('Einkaufsorte', topN(countBy(records, r => r.boughtAt), 6), n)}
-    ${sold.length ? barsHTML('Verkauft über', topN(countBy(sold, r => r.soldTo || 'Ohne Angabe'), 6), n) : ''}`);
+    ${sold.length ? barsHTML('Verkauft über', topN(countBy(sold, r => r.soldTo || 'Ohne Angabe'), 6), n) : ''}
+    <section class="set market"><h3>Marktwert (Discogs)</h3><div id="marketBox">${marketHTML()}</div></section>`,
+  body => {
+    $('#marketBox', body).addEventListener('click', e => {
+      const b = e.target.closest('[data-m]'); if (!b) return;
+      if (b.dataset.m === 'stop') { market.stop = true; b.disabled = true; b.textContent = 'Wird angehalten …'; }
+      else fetchMarketValues(b.dataset.m === 'all');
+    });
+  });
 }
+
+/* ---------- Marktwert über Discogs (in der Statistik) ---------- */
+const DG_COND = {M: 'Mint (M)', NM: 'Near Mint (NM or M-)', 'VG+': 'Very Good Plus (VG+)', VG: 'Very Good (VG)', 'G+': 'Good Plus (G+)', G: 'Good (G)', P: 'Poor (P)'};
+const market = {running: false, stop: false, done: 0, total: 0, errors: 0, msg: '', noSuggest: false};
+const money = (v, cur) => { try { return Number(v).toLocaleString('de-DE', {style: 'currency', currency: cur || 'EUR'}); } catch (e) { return Number(v).toFixed(2) + ' ' + (cur || ''); } };
+let dgLast = 0;
+// Discogs erlaubt mit Token etwa 60 Anfragen pro Minute, daher gut eine Sekunde Abstand
+async function dgGet(path, params = {}) {
+  const wait = dgLast + 1100 - Date.now(); if (wait > 0) await sleep(wait);
+  dgLast = Date.now();
+  const u = new URL('https://api.discogs.com/' + path);
+  Object.entries({...params, token: settings.discogsToken}).forEach(([k, v]) => { if (v) u.searchParams.set(k, v); });
+  const r = await fetch(u);
+  if (r.status === 429) { market.msg = 'Discogs bremst kurz, es geht gleich weiter …'; updateMarketUI(); await sleep(61000); market.msg = ''; return dgGet(path, params); }
+  if (r.status === 401) throw Object.assign(new Error('Discogs: Der Token ist ungültig. Bitte in den Einstellungen prüfen.'), {fatal: true});
+  if (!r.ok) throw Object.assign(new Error(`Discogs antwortet nicht (Fehler ${r.status}).`), {status: r.status});
+  return r.json();
+}
+// Passende Discogs-Pressung finden: Barcode, dann Katalognummer, dann Künstler und Titel
+async function discogsIdFor(r) {
+  if (r.discogsId) return r.discogsId;
+  if (r.source === 'discogs' && r.sourceId) return r.sourceId;
+  const tries = [];
+  if (r.barcode) tries.push({barcode: r.barcode});
+  if (r.catno) tries.push({artist: r.artist, release_title: r.title, catno: r.catno});
+  tries.push({artist: r.artist, release_title: r.title, format: 'Vinyl'});
+  for (const q of tries) {
+    const res = (await dgGet('database/search', {type: 'release', per_page: 10, ...q})).results || [];
+    const vinyl = res.filter(x => (x.format || []).some(f => /vinyl|LP/i.test(f)));
+    const pool = vinyl.length ? vinyl : res;
+    if (!pool.length) continue;
+    return String((pool.find(x => r.year && String(x.year) === String(r.year)) || pool[0]).id);
+  }
+  return '';
+}
+// Schätzung: Preisvorschlag passend zum Zustand, sonst das günstigste aktuelle Angebot
+async function marketValueOf(id, cond) {
+  if (!market.noSuggest) {
+    try {
+      const v = (await dgGet(`marketplace/price_suggestions/${id}`))[DG_COND[cond] || DG_COND['VG+']];
+      if (v && v.value) return {value: Math.round(v.value * 100) / 100, currency: v.currency || 'EUR', kind: 'suggestion'};
+    } catch (e) { if (e.fatal) throw e; market.noSuggest = true; } // z. B. ohne Verkäufer-Einstellungen bei Discogs nicht verfügbar
+  }
+  const st = await dgGet(`marketplace/stats/${id}`, {curr_abbr: 'EUR'});
+  if (st.lowest_price && st.lowest_price.value) return {value: Math.round(st.lowest_price.value * 100) / 100, currency: st.lowest_price.currency || 'EUR', kind: 'lowest', forSale: st.num_for_sale || 0};
+  return null;
+}
+async function fetchMarketValues(all) {
+  if (market.running || !settings.discogsToken) return;
+  const list = records.filter(r => !r.sold && (all || !r.market));
+  Object.assign(market, {running: true, stop: false, done: 0, total: list.length, errors: 0, msg: '', noSuggest: false});
+  updateMarketUI();
+  try {
+    for (const item of list) {
+      if (market.stop) break;
+      try {
+        const id = await discogsIdFor(records.find(x => x.id === item.id) || item);
+        const v = id ? await marketValueOf(id, item.condition) : null;
+        const cur = records.find(x => x.id === item.id);
+        if (cur) await putRecord({...cur, discogsId: id || cur.discogsId || '', market: v ? {...v, at: Date.now()} : {none: true, at: Date.now()}, updatedAt: Date.now()});
+      } catch (e) { if (e.fatal) throw e; market.errors++; }
+      market.done++; updateMarketUI();
+    }
+  } catch (e) { market.msg = e.message; }
+  market.running = false;
+  updateMarketUI();
+}
+function marketHTML() {
+  if (!settings.discogsToken) return `<p class="hint">Mit einem kostenlosen Discogs-Token (Einstellungen) schätzt die App hier, was die Platten heute auf dem Discogs-Marktplatz wert sind.</p>`;
+  const shelf = records.filter(r => !r.sold);
+  const valued = shelf.filter(r => r.market && r.market.value), none = shelf.filter(r => r.market && r.market.none).length;
+  const missing = shelf.filter(r => !r.market).length;
+  const byCur = {};
+  valued.forEach(r => { byCur[r.market.currency] = (byCur[r.market.currency] || 0) + r.market.value; });
+  const total = Object.entries(byCur).map(([c, v]) => money(v, c)).join(' + ');
+  const oldest = valued.length ? Math.min(...valued.map(r => r.market.at)) : 0;
+  const both = valued.filter(r => hasPrice(r.price) && r.market.currency === 'EUR');
+  const paid = sumOf(both, 'price'), worth = Math.round(both.reduce((a, r) => a + r.market.value, 0) * 100) / 100;
+  let html = '';
+  if (valued.length) {
+    html += `<div class="tiles"><div class="tile wide"><span>Geschätzter Marktwert</span><strong>ca. ${esc(total)}</strong><small>für ${valued.length} von ${shelf.length} Platten · Stand ${new Date(oldest).toLocaleDateString('de-DE')}</small></div></div>`;
+    if (both.length) html += `<p class="hint">Diese ${both.length === 1 ? 'eine Platte hat' : both.length + ' Platten haben'} zusammen ${esc(priceText(paid))} gekostet und ${both.length === 1 ? 'ist' : 'sind'} heute etwa ${esc(priceText(worth))} wert (${esc(signed(Math.round((worth - paid) * 100) / 100))}).</p>`;
+    const top = valued.filter(r => r.market.currency === 'EUR').sort((a, b) => b.market.value - a.market.value).slice(0, 5).map(r => [`${r.artist} – ${r.title}`, r.market.value]);
+    html += barsHTML('Wertvollste Platten', top, v => priceText(v));
+  }
+  if (market.running) html += `<p class="sell-calc">Werte werden abgerufen: <b>${market.done} von ${market.total}</b> · etwa 1–3 Sekunden pro Platte</p>${market.msg ? `<p class="hint small">${esc(market.msg)}</p>` : ''}<div class="stack"><button class="btn ghost" data-m="stop">Abbrechen</button></div>`;
+  else {
+    if (market.msg) html += `<p class="warn">${esc(market.msg)}</p>`;
+    if (market.errors) html += `<p class="hint small">Bei ${market.errors} ${market.errors === 1 ? 'Platte' : 'Platten'} klappte die Abfrage nicht. Einfach später erneut abrufen.</p>`;
+    html += `<div class="stack">${missing ? `<button class="btn ghost" data-m="missing">${valued.length ? `Fehlende Werte abrufen (${missing})` : `Werte bei Discogs abrufen (${missing} ${missing === 1 ? 'Platte' : 'Platten'})`}</button>` : ''}${valued.length || none ? '<button class="btn ghost" data-m="all">Alle Werte aktualisieren</button>' : ''}</div>`;
+  }
+  if (none) html += `<p class="hint small">${none} ${none === 1 ? 'Platte wurde' : 'Platten wurden'} bei Discogs nicht gefunden oder dort gerade nicht angeboten.</p>`;
+  html += `<p class="hint small">Schätzung über Discogs: der Preisvorschlag für den eingetragenen Zustand (ohne Angabe: VG+), sonst das günstigste aktuelle Angebot. Platten, die nicht von Discogs stammen, sucht die App über Barcode oder Künstler und Titel. Dabei kann eine andere Pressung erwischt werden, die Detailansicht verlinkt den gefundenen Eintrag.</p>`;
+  return html;
+}
+function updateMarketUI() { const box = $('#marketBox'); if (box) box.innerHTML = marketHTML(); }
 
 /* ---------- Google Drive (optional) ---------- */
 // Client-ID aus der Google Cloud Console eintragen (Anleitung: DRIVE-EINRICHTUNG.md).
@@ -1253,7 +1362,7 @@ async function exportCsv() {
   const cols = [['Inventarnummer', 'inv'], ['Künstler', 'artist'], ['Einsortiert unter', 'artistSort'], ['Titel', 'title'], ['Jahr', 'year'], ['Erstveröffentlichung', 'origYear'],
     ['Genre', 'genre'], ['Stile', r => (r.styles || []).join(', ')], ['Label', 'label'], ['Katalognummer', 'catno'], ['Land', 'country'], ['Format', 'format'],
     ['Barcode', r => r.barcode ? `="${r.barcode}"` : ''], ['Regalfach', 'shelf'], ['Kategorien', r => (r.tags || []).join(', ')], ['Zustand', 'condition'],
-    ['Bewertung', 'rating'], ['Notizen', 'notes'], ['Einkaufspreis', r => priceInput(r.price)], ['Einkaufsort', 'boughtAt'], ['Einkaufsdatum', r => dateText(r.boughtOn)], ['Verkauft', r => r.sold ? 'ja' : ''], ['Verkaufspreis', r => priceInput(r.soldPrice)], ['Verkaufsdatum', r => dateText(r.soldOn)], ['Verkauft an', 'soldTo'], ['Hinzugefügt', r => r.addedAt ? new Date(r.addedAt).toLocaleDateString('de-DE') : ''], ['Quelle', 'source'], ['Quell-ID', 'sourceId']];
+    ['Bewertung', 'rating'], ['Notizen', 'notes'], ['Einkaufspreis', r => priceInput(r.price)], ['Einkaufsort', 'boughtAt'], ['Einkaufsdatum', r => dateText(r.boughtOn)], ['Verkauft', r => r.sold ? 'ja' : ''], ['Verkaufspreis', r => priceInput(r.soldPrice)], ['Verkaufsdatum', r => dateText(r.soldOn)], ['Verkauft an', 'soldTo'], ['Marktwert (Discogs)', r => r.market && r.market.value ? priceInput(r.market.value) + (r.market.currency && r.market.currency !== 'EUR' ? ' ' + r.market.currency : '') : ''], ['Hinzugefügt', r => r.addedAt ? new Date(r.addedAt).toLocaleDateString('de-DE') : ''], ['Quelle', 'source'], ['Quell-ID', 'sourceId']];
   const cell = v => '"' + String(v ?? '').replace(/"/g, '""') + '"';
   const rows = records.slice().sort(cmpRecords('inv')).map(r => cols.map(([, k]) => cell(typeof k === 'function' ? k(r) : r[k])).join(';'));
   const csv = '\uFEFF' + [cols.map(c => cell(c[0])).join(';'), ...rows].join('\r\n');
@@ -1290,7 +1399,7 @@ function openSettings() {
     </section>
     ${driveSettingsHTML()}
     <section class="set"><h3>Discogs (optional)</h3>
-      <p class="hint">Mit einem persönlichen Discogs-Token sucht die App zusätzlich bei Discogs. Dort sind mehr Vinyl-Pressungen erfasst, und die Genre-Angaben sind genauer.</p>
+      <p class="hint">Mit einem persönlichen Discogs-Token sucht die App zusätzlich bei Discogs. Dort sind mehr Vinyl-Pressungen erfasst, und die Genre-Angaben sind genauer. Außerdem kann die App in der Statistik den heutigen Marktwert der Sammlung schätzen.</p>
       <form id="tokForm" class="inline-form"><input name="tok" type="password" value="${esc(settings.discogsToken)}" placeholder="Token einfügen" autocomplete="off" aria-label="Discogs-Token"><button class="btn">Speichern</button></form>
       <p class="hint small">Token erzeugen: bei Discogs anmelden, <a href="https://www.discogs.com/settings/developers" target="_blank" rel="noopener">Einstellungen für Entwickler</a> öffnen und „Generate new token“ wählen. Der Token bleibt nur auf diesem Gerät.</p>
     </section>
