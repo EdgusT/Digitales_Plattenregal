@@ -1,6 +1,6 @@
 // Service Worker: macht die App offline startfähig.
 // Nach Änderungen an der App die Versionsnummer erhöhen (z. B. v2), damit Handys die neue Fassung laden.
-const VERSION = 'v4';
+const VERSION = 'v5';
 const SHELL = 'plattenregal-' + VERSION;
 const FILES = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './apple-touch-icon.png', './html5-qrcode.min.js'];
 
